@@ -545,3 +545,127 @@ Resolved peer dependency conflict in package.json:
 
 Remaining: Tasks 8.5, 9, 15, 16, 18 (6 tasks)
 
+
+## [2026-01-31] Task 9: Confirmation Flow (TDD RED → GREEN)
+
+### Implementation Approach
+
+Implemented blocking Promise-based confirmation system:
+- ConfirmationManager: Core logic for managing pending confirmations
+- Confirmation.tsx: UI component with y/n keyboard handling
+- 18 total tests (9 core + 9 UI), all passing
+
+### Patterns & Conventions
+
+1. **Promise-Based Confirmation**: Blocking pattern for dangerous operations
+   - `requestConfirmation(toolName, description)` returns Promise<boolean>
+   - Caller awaits promise until confirm() or reject() is called
+   - Single pending confirmation at a time (replaces previous if new request arrives)
+   - Prevents race conditions and ensures UI-driven control flow
+
+2. **ConfirmationManager Class Design**: Simple, focused responsibility
+   - Private `pendingConfirmation` field with `resolve` callback
+   - `requestConfirmation()`: Returns Promise wrapping resolve callback
+   - `confirm()` / `reject()`: Calls resolve with true/false, clears state
+   - `getPendingConfirmation()`: Returns immutable copy without resolve (security)
+   - No exceptions, all methods safe from null checks
+
+3. **Immutable UI Data Pattern**: Prevent external state mutations
+   - `getPendingConfirmation()` uses `Omit<PendingConfirmation, 'resolve'>` type
+   - Returns object with only `toolName` and `description` fields
+   - Calling code cannot accidentally trigger resolve callback
+   - Maintains single source of truth in ConfirmationManager
+
+4. **UI Component Integration**: Ink component with useInput hook
+   - Accepts `confirmation: { toolName, description } | null`
+   - Callbacks: `onConfirm()`, `onReject()` (not Promise-based)
+   - useInput hook captures y/n key presses (case-insensitive)
+   - Returns null when confirmation is null (early exit pattern)
+   - Styled with red border, dangerous operation warning, clear prompts
+
+5. **Keyboard Handling Pattern**: Simple and explicit
+   - Check `input === "y" || input === "Y"` for confirm
+   - Check `input === "n" || input === "N"` for reject
+   - Early return if `!confirmation` prevents unnecessary processing
+   - Only processes input when confirmation pending
+
+### Technical Decisions
+
+- **Promise-based vs Callback**: Chose Promise for blocking semantics
+  - Rationale: Agent's `sendMessage()` can `await requestConfirmation()`
+  - Caller flow: await confirmation → proceed with tool execution
+  - Alternative: Callbacks with state machine (more complex)
+
+- **Single Pending vs Queue**: Only one confirmation at a time
+  - Rationale: Simplifies UI (one confirmation dialog)
+  - One new request replaces previous (matches typical dialog behavior)
+  - Alternative: Queue would add complexity without clear benefit
+
+- **Immutable Getter**: Return Omit type instead of full object
+  - Rationale: Prevent external code from manipulating resolve callback
+  - Type safety: TypeScript ensures no access to resolve field
+  - Clear API boundary between manager and consumers
+
+- **Early Return in Component**: Return null when confirmation is null
+  - Rationale: Ink renders nothing → no UI pollution
+  - Alternative: Render empty box (wastes space)
+  - Pattern: Matches React conditional rendering best practices
+
+### TDD Workflow Insights
+
+**Core Tests** (9 tests):
+1. Initialization with null state
+2. requestConfirmation returns Promise
+3. getPendingConfirmation with pending state
+4. confirm() resolves with true
+5. reject() resolves with false
+6. confirm() clears state
+7. reject() clears state
+8. Only one pending at a time (latest replaces)
+9. Sequential confirmations work correctly
+
+**UI Tests** (9 tests):
+1. Renders when confirmation present
+2. Renders nothing when confirmation null
+3. Displays tool name
+4. Displays description
+5. Shows prompt text
+6. 'y' key triggers onConfirm
+7. 'n' key triggers onReject
+8. No callbacks when confirmation is null
+9. Displays dangerous operation warning
+
+### Ink Component Patterns Confirmed
+
+From Input and ToolStatusPanel components:
+- `useInput((input, key) => {})` hook for keyboard events
+- Return null for conditional non-rendering
+- useInput called unconditionally (Ink handles safety)
+- Props interface with React.FC<Props> component signature
+- Destructuring props with const { prop1, prop2 } = props
+
+### Test Results
+
+- 18 new tests, all passing
+- Total: 189 tests passing (up from 171, net +18)
+- 29 new expect() calls
+- Zero LSP diagnostics on both files
+- No regressions in existing tests
+
+### Future Integration Points
+
+1. **Agent Integration**: Call manager.requestConfirmation() before dangerous tools
+2. **TUI Integration**: Connect Confirmation component to manager state
+3. **Error Handling**: Pass error messages through confirmation interface
+4. **Timeout Support**: Optional timeout for auto-reject (not in v1.0)
+
+### Files Implemented
+
+1. `src/core/confirmation.ts` - ConfirmationManager class (38 lines)
+2. `src/ui/components/Confirmation.tsx` - React component (44 lines)
+3. `src/__tests__/core/confirmation.test.ts` - Manager tests (97 lines)
+4. `src/__tests__/ui/components/Confirmation.test.tsx` - UI tests (121 lines)
+
+**Status: Task 9 complete - Confirmation flow ready for dangerous tool integration**
+
+Remaining: Tasks 10-13, 15, 16, 18 (7 tasks)
