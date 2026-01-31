@@ -474,7 +474,7 @@ Phase 7: Polish
 
 ---
 
-- [ ] 8.5. Implement Tool Status Panel Component
+- [x] 8.5. Implement Tool Status Panel Component
 
   **What to do**:
   - 创建 `src/ui/components/ToolStatusPanel.tsx`
@@ -492,10 +492,10 @@ Phase 7: Polish
   - `src/core/state.ts` - 状态机状态
 
   **Acceptance Criteria**:
-  - [ ] 测试: `src/__tests__/ui/components/ToolStatusPanel.test.tsx`
+  - [x] 测试: `src/__tests__/ui/components/ToolStatusPanel.test.tsx`
     - 测试显示工具状态
     - 测试状态更新
-  - [ ] `bun test src/__tests__/ui/components/ToolStatusPanel.test.tsx` → PASS
+  - [x] `bun test src/__tests__/ui/components/ToolStatusPanel.test.tsx` → PASS
 
   **Commit**: YES
   - Message: `feat(ui): implement tool status panel`
