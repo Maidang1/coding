@@ -660,7 +660,7 @@ Phase 7: Polish
 
 ---
 
-- [ ] 13. Implement grep Tool
+- [x] 13. Implement grep Tool
 
   **What to do**:
   - 创建 `src/tools/grep.ts`
