@@ -592,7 +592,7 @@ Phase 7: Polish
 
 ---
 
-- [ ] 11. Implement bash Tool
+- [x] 11. Implement bash Tool
 
   **What to do**:
   - 创建 `src/tools/bash.ts`
