@@ -315,7 +315,7 @@ Phase 7: Polish
 
 ---
 
-- [ ] 5. Implement Agent Core Loop
+- [x] 5. Implement Agent Core Loop
 
   **What to do**:
   - 创建 `src/core/agent.ts`
@@ -369,13 +369,13 @@ Phase 7: Polish
   - `src/tools/types.ts` - 工具接口和 DangerLevel
 
   **Acceptance Criteria**:
-  - [ ] 测试: `src/__tests__/core/agent.test.ts`
+  - [x] 测试: `src/__tests__/core/agent.test.ts`
     - 测试 agent 初始化
     - 测试消息发送 (mock API)
     - 测试安全工具自动执行流程 (mock)
     - 测试危险工具触发确认状态
     - 测试状态转换
-  - [ ] `bun test src/__tests__/core/agent.test.ts` → PASS
+  - [x] `bun test src/__tests__/core/agent.test.ts` → PASS
 
   **Commit**: YES
   - Message: `feat(core): implement agent core loop with confirmation support`

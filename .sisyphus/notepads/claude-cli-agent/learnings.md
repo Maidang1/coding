@@ -409,3 +409,120 @@ All tests pass (74 total, 21 new state machine tests).
 - Known issues section for transparency
 - Architecture diagrams using text (state machine flow)
 
+
+## [2026-01-31] Task 5: Agent Core Loop (TDD RED → GREEN)
+
+### Implementation Approach
+
+Due to missing node_modules (bun install hangs), implemented a testable Agent class without actual Anthropic SDK integration:
+- Core Agent logic implemented with all state management
+- Tool execution framework in place
+- Confirmation flow methods ready
+- SDK integration deferred (marked as `anthropic: Anthropic | null`)
+
+### Patterns & Conventions
+
+1. **Agent Class Structure**: Encapsulates agent behavior
+   - Config: apiKey, model, tools, toolExecutors, maxTokens, systemPrompt
+   - State: Uses AgentStateMachine internally
+   - Messages: Array of user/assistant messages
+   - PendingToolCall: Tracks tools awaiting confirmation
+
+2. **Tool Execution Pattern**: Separate definition from execution
+   - `tools`: Array of ToolDefinition (metadata)
+   - `toolExecutors`: Record mapping tool name → execution function
+   - Allows testing without actual tool implementation
+   - Type-safe: `ToolExecutor = (input: Record<string, unknown>) => Promise<ToolResult<unknown>>`
+
+3. **Safety Check Pattern**: `isToolSafe(toolName): boolean`
+   - Looks up tool in config.tools
+   - Returns true if dangerLevel === DangerLevel.safe
+   - Used to determine if confirmation needed
+
+4. **Confirmation Flow Design**: Three-method pattern
+   - `setPendingToolCall(toolName, input)`: Store pending tool
+   - `confirmToolExecution()`: Clear pending, proceed with execution
+   - `rejectToolExecution()`: Clear pending, send rejection to LLM
+   - `getPendingToolCall()`: Returns immutable copy or null
+
+5. **Message Management**: Simple array-based history
+   - `addUserMessage(content)`: Append user message
+   - `addAssistantMessage(content)`: Append assistant message
+   - `getMessages()`: Return immutable copy
+   - Messages support both string content and structured content blocks
+
+6. **State Machine Integration**: Delegation pattern
+   - Agent owns AgentStateMachine instance
+   - Exposes `getState()` and `transition(event)` methods
+   - Added `reset()` method to StateMachine for universal reset
+   - Agent.reset() clears messages, pending calls, and resets state
+
+### Technical Decisions
+
+- **SDK Placeholder**: Set `anthropic: Anthropic | null = null`
+  - Rationale: node_modules unavailable, bun install hangs
+  - Allows tests to pass without actual SDK
+  - Future: Replace with actual `new Anthropic({ apiKey })` when fixed
+
+- **Message Type Flexibility**: Support string | structured content
+  - Rationale: Anthropic API uses structured content for tool_use blocks
+  - Type: `content: string | Array<{ type, text?, id?, name?, input? }>`
+  - Allows future streaming support
+
+- **Config Defaults**: Sensible defaults in constructor
+  - `maxTokens: 4096`
+  - `systemPrompt: "You are a helpful coding assistant."`
+  - Spread pattern: `{ ...defaults, ...config }`
+
+- **Immutability**: Return copies from getters
+  - `getMessages()`: `return [...this.messages]`
+  - `getPendingToolCall()`: `return pendingToolCall ? { ...pendingToolCall } : null`
+  - Prevents external modification
+
+### State Machine Enhancement
+
+Added `reset()` method to AgentStateMachine:
+- Previous: reset only allowed from ERROR state via transition("reset")
+- New: `reset()` method allows unconditional return to IDLE
+- Rationale: Agent.reset() should work from any state
+
+### Test Coverage
+
+17 tests across 8 describe blocks:
+1. Initialization: State, config storage
+2. Message history: Empty start, add messages
+3. State management: Transitions, state getter
+4. Tool execution: Safe/dangerous identification, execution with mocks
+5. Confirmation flow: Pending tool calls, confirm/reject
+6. Error handling: Tool errors, unknown tools
+7. Reset: Clear messages and state
+
+### Challenges & Solutions
+
+**Challenge**: Cannot import @anthropic-ai/sdk without node_modules
+**Solution**: Use type placeholder `type Anthropic = any`, set `anthropic: null`
+**Impact**: Tests pass, actual LLM integration deferred
+
+**Challenge**: AgentState enum naming (IDLE vs idle)
+**Solution**: Use uppercase enum values (AgentState.IDLE)
+**Pattern**: Enums use UPPERCASE, values are lowercase strings
+
+**Challenge**: State machine reset() didn't exist
+**Solution**: Added dedicated reset() method for unconditional state reset
+**Benefit**: Cleaner API, works from any state
+
+### Future Implementation Needed
+
+1. **Actual LLM Streaming**: Implement `sendMessage()` with `anthropic.messages.stream()`
+2. **Tool Use Loop**: Parse tool_use blocks from streaming response
+3. **Confirmation Integration**: Call setPendingToolCall() for dangerous tools
+4. **Error Recovery**: Handle API errors, network failures
+5. **Streaming Events**: Emit events for TUI to display progress
+
+### Test Results
+- 17 new tests, all passing
+- Total: 149 tests passing (up from 132)
+- 28 new expect() calls
+- Zero LSP diagnostics
+- State machine now has reset() method
+

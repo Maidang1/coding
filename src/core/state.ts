@@ -67,4 +67,8 @@ export class AgentStateMachine {
     this.currentState = nextState;
     return true;
   }
+
+  reset(): void {
+    this.currentState = AgentState.IDLE;
+  }
 }
