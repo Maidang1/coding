@@ -285,7 +285,7 @@ Phase 7: Polish
 
 ### Phase 2: Agent Core
 
-- [ ] 4. Implement Agent State Machine
+- [x] 4. Implement Agent State Machine
 
   **What to do**:
   - 创建 `src/core/state.ts`
