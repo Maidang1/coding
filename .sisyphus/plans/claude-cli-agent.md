@@ -445,7 +445,7 @@ Phase 7: Polish
 
 ---
 
-- [ ] 8. Implement Input Component
+- [x] 8. Implement Input Component
 
   **What to do**:
   - 创建 `src/ui/components/Input.tsx`
