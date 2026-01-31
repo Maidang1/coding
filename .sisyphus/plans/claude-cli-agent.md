@@ -694,7 +694,7 @@ Phase 7: Polish
 
 ### Phase 6: Integration
 
-- [ ] 14. Implement Session Persistence
+- [x] 14. Implement Session Persistence
 
   **What to do**:
   - 创建 `src/session/manager.ts`
@@ -713,11 +713,11 @@ Phase 7: Polish
   - Node.js: `os.homedir()`
 
   **Acceptance Criteria**:
-  - [ ] 测试: `src/__tests__/session/manager.test.ts`
+  - [x] 测试: `src/__tests__/session/manager.test.ts`
     - 测试保存会话
     - 测试加载会话
     - 测试列出会话
-  - [ ] `bun test src/__tests__/session/manager.test.ts` → PASS
+  - [x] `bun test src/__tests__/session/manager.test.ts` → PASS
 
   **Commit**: YES
   - Message: `feat(session): implement JSON session persistence`

@@ -239,3 +239,153 @@ Conventions, patterns, and wisdom accumulated during implementation.
 - **State Context**: Could attach data to states (e.g., error message in ERROR state)
 
 All tests pass (74 total, 21 new state machine tests).
+
+## [2026-01-31] Tool Implementation Summary (Tasks 0-4, 10-13)
+
+### Completed Tools (7 total)
+1. **read_file** (safe): Bun.file().text() with existence checks
+2. **glob** (safe): glob package with async iteration
+3. **write_file** (dangerous): Bun.write() with recursive mkdir
+4. **bash** (dangerous): Bun.spawn() with timeout and stream handling
+5. **edit_file** (dangerous): search-replace with occurrence counting
+6. **grep** (safe): RegExp matching with line numbers
+
+### Implementation Patterns Established
+- **TDD workflow**: RED (failing tests) → GREEN (implementation) → REFACTOR
+- **Tool structure**: definition + async function export
+- **Error handling**: ToolResult<T> discriminated union
+- **Testing**: Comprehensive test suites with temp directories
+- **Bun APIs**: Preferred over Node.js (Bun.file, Bun.write, Bun.spawn, Bun.$)
+
+### Test Statistics
+- 107 tests total across 8 test files
+- 106 passing, 1 failing (React UI - blocked by JSX runtime)
+- 208 expect() assertions
+- Coverage: All tools fully tested
+
+### Architecture Quality
+- Zero LSP diagnostics
+- Clean separation: tools/types/state
+- DangerLevel safety classification working
+- Tool definitions ready for Anthropic SDK integration
+
+
+## [2026-01-31] Task 14: Session Persistence (TDD RED → GREEN)
+
+### Patterns & Conventions
+
+1. **SessionManager Class Design**: Encapsulate session storage logic in a class
+   - Constructor accepts optional `sessionDir` parameter (defaults to `~/.claude-cli/sessions`)
+   - Default path: `homedir()/.claude-cli/sessions/`
+   - All methods return `ToolResult<T>` for consistent error handling
+   - Instance tracks sessionDir, allowing multiple managers for testing
+
+2. **Session Schema**: Interface defines complete session structure
+   - `id`: Unique session identifier (used as filename without .json)
+   - `messages`: Array of user/assistant messages
+   - `toolCalls`: Array of tool execution records with inputs and results
+   - `createdAt`, `updatedAt`: ISO 8601 timestamp strings
+   - Nested interfaces: `Message` and `ToolCall` for type safety
+
+3. **CRUD Operations Pattern**:
+   - **save()**: `mkdir -p` then `Bun.write()` JSON
+   - **load()**: Check existence, then `file.json()` parse
+   - **list()**: `readdir()` + filter `.json` + load each
+   - **delete()**: Check existence, then `Bun.spawn(["rm", path])`
+   - All operations wrapped in try-catch → ToolResult
+
+4. **Directory Handling**: Create directories recursively on-demand
+   - `save()`: Creates sessionDir if missing (mkdir -p behavior)
+   - `list()`: Creates sessionDir if missing (prevents readdir error)
+   - `load()`: Does NOT create directory (read-only operation)
+   - Pattern: Write operations ensure directory exists, read operations don't
+
+5. **File Existence Checks**: Use `Bun.file().exists()` before operations
+   - `load()`: Check before reading to return "not found" error
+   - `delete()`: Check before deleting to return "not found" error
+   - `save()`: Skip check (overwrite is desired behavior)
+   - Pattern: Existence checks provide better error messages
+
+6. **JSON Serialization**: Use Bun APIs for JSON handling
+   - Save: `Bun.write(path, JSON.stringify(session, null, 2))` (pretty-printed)
+   - Load: `await file.json()` (automatic parsing)
+   - Error handling: Catch JSON parse errors and return ToolResult failure
+   - Pattern: Pretty-print for human readability (debugging sessions)
+
+7. **Test Organization for Persistence**:
+   - Group by operation: save(), load(), list(), delete()
+   - Test success cases, error cases, edge cases separately
+   - Use temp directory (`/tmp/claude-cli-test-sessions`) for tests
+   - Clean setup/teardown: `rm -rf` + `mkdir` in beforeEach
+   - Verify file existence and content after operations
+
+8. **File Deletion Pattern**: Use Bun.spawn for file removal
+   - `Bun.spawn(["rm", filePath])` instead of `fs.unlink()`
+   - Check exit code to detect failures
+   - Workaround: Bun doesn't have native `unlink()` API
+   - Alternative: Could use `fs/promises` unlink
+
+### Technical Decisions
+
+- **Class-based API**: Chose class over module functions
+  - Rationale: Encapsulates sessionDir configuration, easier to test with custom paths
+  - Alternative: Module functions with default sessionDir
+  - Class allows multiple instances (e.g., test vs production paths)
+
+- **ToolResult Return Type**: Consistent with tool implementations
+  - All operations return `ToolResult<T>` (success/failure discriminated union)
+  - Allows callers to handle errors gracefully without try-catch
+  - Consistent with project pattern from Task 1
+
+- **JSON Storage Format**: Simple JSON files instead of database
+  - Rationale: Meets "Must NOT use SQLite" constraint
+  - Easy to inspect/debug manually
+  - One file per session for isolation
+  - Pretty-printed JSON (2-space indent) for readability
+
+- **Default Path**: `~/.claude-cli/sessions/`
+  - Uses `os.homedir()` for cross-platform compatibility
+  - Hidden directory (dot-prefix) follows Unix conventions
+  - Scoped under `.claude-cli` for organization
+
+- **File Naming**: `{session-id}.json`
+  - Session ID becomes filename (without extension)
+  - Simple mapping: `load("abc")` → `~/.claude-cli/sessions/abc.json`
+  - No encoding needed if session IDs are filesystem-safe
+
+- **Error Messages**: Include context in error strings
+  - "Session {id} not found" (includes session ID)
+  - "Failed to save session: {message}" (includes underlying error)
+  - Pattern: Prefix operation, include relevant IDs/paths
+
+### TDD Workflow Insights
+
+- **Test fixtures**: Create full Session objects with all required fields
+- **Temp directories**: Use `/tmp/` prefix for test isolation
+- **Cleanup strategy**: Force remove in beforeEach (clean slate every test)
+- **Edge case testing**: Corrupted JSON, non-existent sessions, empty directories
+- **Integration testing**: save → load roundtrip verifies serialization
+
+### Bun API Usage
+
+- **Bun.file()**: Returns BunFile object (lazy, doesn't read immediately)
+- **Bun.write()**: Accepts string or object (auto-serializes objects)
+- **file.json()**: Promise-based JSON parsing
+- **file.exists()**: Non-throwing existence check
+- **Bun.spawn()**: For system commands (rm)
+- **Node.js imports**: Use `node:` prefix (node:path, node:fs/promises, node:os)
+
+### Test Results
+- 13 new tests, all passing
+- Total: 132 tests passing (up from 119)
+- 35 new expect() calls
+- Zero LSP diagnostics
+- No regressions in existing tests
+
+### Future Improvements
+- Add `update()` method for partial session updates
+- Add `search()` method for filtering sessions by date/content
+- Add `export()` method for session backup
+- Implement automatic cleanup of old sessions
+- Add compression for large session files
+
