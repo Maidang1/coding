@@ -669,3 +669,136 @@ From Input and ToolStatusPanel components:
 **Status: Task 9 complete - Confirmation flow ready for dangerous tool integration**
 
 Remaining: Tasks 10-13, 15, 16, 18 (7 tasks)
+
+## [2026-01-31] Task 15: Create CLI Entry Point (TDD RED → GREEN)
+
+### Implementation Approach
+
+Implemented CLI entry point as executable script with TDD methodology:
+- Test suite first (8 comprehensive tests)
+- Minimal implementation (arg parsing, env validation, app launch)
+- All tests passing (197 total, 8 new CLI tests)
+
+### Patterns & Conventions
+
+1. **Shebang and Bun Compatibility**: Entry point uses `#!/usr/bin/env bun`
+   - Allows direct execution: `./bin/claude-cli`
+   - Bun automatically transpiles TypeScript
+   - Import resolution uses .js extensions (Bun's output format)
+
+2. **Argument Parsing Pattern**: Simple native approach without frameworks
+   - `process.argv.slice(2)` to get CLI arguments
+   - No commander.js or yargs needed for minimal flags
+   - Single-pass logic: check for flags, then validate env vars
+   - Flag precedence: --help and --version bypass API key check
+
+3. **Flag Handling Logic**:
+   - Early return for --help/-h (display usage, exit 0)
+   - Early return for --version/-v (display version, exit 0)
+   - Any other --flag displays help (exit 0)
+   - No arguments → validate API key and launch app
+
+4. **API Key Validation Pattern**:
+   - Check `process.env.ANTHROPIC_API_KEY` existence
+   - If missing: console.error() message to stderr, process.exit(1)
+   - If present: pass to Ink render with React.createElement()
+
+5. **Package.json Integration**:
+   - Added "version": "1.0.0" (was missing)
+   - Added "bin" field: `{ "claude-cli": "./bin/claude-cli" }`
+   - Enables: `npm install -g` symlinks or `bun bin/claude-cli` calls
+
+6. **Version Display**: Dynamic read from package.json
+   - `readFileSync(join(__dirname, "../package.json"), "utf-8")`
+   - Parse JSON and extract `packageJson.version`
+   - Prevents hardcoding version in two places
+
+7. **Ink Component Rendering**:
+   - Import: `import { render } from "ink"`
+   - Render App component: `render(React.createElement(App, { apiKey }))`
+   - App component accepts apiKey prop (not yet implemented in App.tsx)
+   - Render is blocking (controls process lifetime)
+
+### Test Organization (8 tests, all passing)
+
+1. **--help flag**: Displays usage information (cli-cli, Usage, options)
+2. **--version flag**: Shows version from package.json (1.0.0)
+3. **Missing API key**: Exits with code 1, stderr contains ANTHROPIC_API_KEY
+4. **Present API key**: --help flag works without error
+5. **--help precedence**: Works even without ANTHROPIC_API_KEY
+6. **--version precedence**: Works even without ANTHROPIC_API_KEY
+7. **Unknown flags**: Displays help instead of error
+8. **Env var requirement**: Error message mentions ANTHROPIC_API_KEY
+
+### Test Implementation Details
+
+Used `spawnSync` instead of async `spawn`:
+- Rationale: Simpler test structure, process must exit for exit code
+- `spawnSync([bun, cliPath, ...args], { env })` blocks until completion
+- Access results via `.stdout.toString()`, `.stderr.toString()`, `.exitCode`
+- Helper function `getBunPath()` resolves bun from PATH via `which bun`
+
+### Technical Decisions
+
+- **No Commander.js**: Only --help, --version, basic flags
+  - Rationale: Minimal requirements for v1.0
+  - Simpler: Native argv parsing is sufficient
+  - Future: Can add commander.js when more flags needed
+
+- **Version Passed to App**: App component receives apiKey prop
+  - Alternative: Global/context variable
+  - Chosen: Explicit prop makes dependency clear
+  - Future: App.tsx needs to accept and use apiKey prop
+
+- **Direct render() call**: Blocking control flow
+  - Rationale: CLI should run until user exits (Ctrl+C)
+  - render() handles TTY setup and lifecycle
+  - Alternative: Could emit events, but Ink handles this
+
+- **Exit codes**: 0 for success, 1 for errors
+  - Standard POSIX convention
+  - process.exit() for CLI tools
+  - Tests verify exit codes match expectations
+
+### Files Created/Modified
+
+1. **bin/claude-cli** (new, 63 lines)
+   - Executable script with shebang
+   - Argument parsing, env validation, app launch
+   - Version display and help text
+
+2. **src/__tests__/cli.test.ts** (new, 110 lines)
+   - 8 comprehensive tests using spawnSync
+   - Tests for flags, env vars, exit codes, output
+
+3. **package.json** (modified)
+   - Added "version": "1.0.0"
+   - Added "bin" field for CLI installation
+
+### Verification Results
+
+✅ All 197 tests passing (8 new CLI tests)
+✅ Manual testing: --help displays usage
+✅ Manual testing: --version shows 1.0.0
+✅ Manual testing: Missing API key exits with error
+✅ File executable: chmod +x verified with ls -la
+✅ Zero LSP diagnostics on cli.test.ts
+
+### Future Integration Points
+
+1. **App.tsx Enhancement**: Accept apiKey prop and use it
+2. **Session Integration**: Load previous session on startup
+3. **Agent Integration**: Initialize agent with apiKey
+4. **TUI Layout**: Connect all components (MessageDisplay, Input, etc.)
+
+### Architecture Notes
+
+CLI entry point follows clean pattern:
+- Executable script → Argument parsing → Environment validation → App render
+- No complex business logic in CLI layer
+- All heavy lifting delegated to App component
+- TDD approach ensured comprehensive test coverage upfront
+
+**Status: Task 15 complete - CLI entry point ready for TUI integration**
+
+Remaining: Tasks 16, 18 (2 tasks)

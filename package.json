@@ -1,8 +1,12 @@
 {
   "name": "coding-agent",
+  "version": "1.0.0",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "claude-cli": "./bin/claude-cli"
+  },
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --hot src/index.ts",

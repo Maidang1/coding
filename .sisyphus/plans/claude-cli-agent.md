@@ -725,7 +725,7 @@ Phase 7: Polish
 
 ---
 
-- [ ] 15. Create CLI Entry Point
+- [x] 15. Create CLI Entry Point
 
   **What to do**:
   - 创建 `bin/claude-cli` (可执行脚本)
@@ -745,11 +745,11 @@ Phase 7: Polish
   - `package.json` - 添加 bin 字段
 
   **Acceptance Criteria**:
-  - [ ] 测试: `src/__tests__/cli.test.ts`
+  - [x] 测试: `src/__tests__/cli.test.ts`
     - 测试 --help 输出
     - 测试缺少 API_KEY 错误
-  - [ ] `bun test src/__tests__/cli.test.ts` → PASS
-  - [ ] 手动验证: `ANTHROPIC_API_KEY=xxx bun bin/claude-cli` 启动 TUI
+  - [x] `bun test src/__tests__/cli.test.ts` → PASS
+  - [x] 手动验证: `ANTHROPIC_API_KEY=xxx bun bin/claude-cli` 启动 TUI
 
   **Commit**: YES
   - Message: `feat: create CLI entry point`
