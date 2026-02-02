@@ -190,6 +190,24 @@ const App = () => {
 
     const handleToolUse = (toolName: string, input: any) => {
       const messageList = globalStore.get(messageListAtom) ?? [];
+      if (toolName === 'skills') {
+        const action = input?.action;
+        if (action === 'get') {
+          const name = input?.name || 'unknown';
+          globalStore.set(messageListAtom, [
+            ...messageList,
+            { role: 'system', content: `🧠 Skill 已调用: ${name}` },
+          ]);
+          return;
+        }
+        if (action === 'list') {
+          globalStore.set(messageListAtom, [
+            ...messageList,
+            { role: 'system', content: '🧠 请求技能列表' },
+          ]);
+          return;
+        }
+      }
       globalStore.set(messageListAtom, [
         ...messageList,
         {

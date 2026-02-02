@@ -5,11 +5,12 @@
   "type": "module",
   "private": false,
   "scripts": {
-    "start": "bun run src/index.ts",
-    "dev": "bun --hot src/index.ts"
+    "start": "bun run src/cli/index.tsx"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -17,11 +18,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
     "@modelcontextprotocol/sdk": "^1.17.5",
+    "@types/js-yaml": "^4.0.9",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",
     "jotai": "^2.17.0",
+    "js-yaml": "^4.1.1",
     "react": "^19.2.4",
-    "zustand": "^5.0.11",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "zustand": "^5.0.11"
   }
 }

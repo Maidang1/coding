@@ -1,9 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { EventEmitter } from "events";
 import { setLoading } from "../../render/state/loading";
-import { Tool, bashTool } from "../tools";
+import { Tool, bashTool, SkillsTool } from "../tools";
 import { getEffectiveConfig, type McpServerConfig } from "../config";
 import { loadMcpTools } from "../mcp";
+import { SkillsManager, type SkillLoadOutcome, type SkillMetadata } from "../skills";
+import * as os from "os";
+import * as path from "path";
 
 function repairJsonIfUnbalanced(value: string): string {
   const stack: string[] = [];
@@ -80,6 +83,9 @@ class Agent extends EventEmitter {
   mcpServers?: Record<string, McpServerConfig>;
   cleanupMcp?: () => Promise<void>;
   private mcpLoaded = false;
+  private skillsManager: SkillsManager;
+  private loadedSkills: SkillLoadOutcome | null = null;
+  private injectedSkillDetails: Map<string, string> = new Map();
 
   constructor(params: {
     model: string;
@@ -100,10 +106,44 @@ class Agent extends EventEmitter {
       });
     this.tools = new Map<string, Tool>(tools ?? []);
     this.tools.set(bashTool.name, bashTool);
+    const skillsTool = new SkillsTool({
+      listSkills: () => this.loadedSkills?.skills ?? [],
+      getSkillByName: (name) => this.findSkillByName(name),
+      injectSkillDetails: (name, details) => this.injectSkillDetails(name, details),
+    });
+    this.tools.set(skillsTool.name, skillsTool);
     this.mcpServers = mcpServers;
+    
+    // Initialize SkillsManager
+    const codexHome = path.join(os.homedir(), ".codex");
+    this.skillsManager = new SkillsManager(codexHome);
   }
 
   async init(params: { includeMcpTools?: boolean } = {}): Promise<void> {
+    // Load skills
+    const cwd = process.cwd();
+    this.loadedSkills = this.skillsManager.getSkillsForCwd(cwd);
+    
+    // Process skill dependencies (e.g. MCP servers)
+    if (this.loadedSkills) {
+        for (const skill of this.loadedSkills.skills) {
+            if (skill.dependencies?.tools) {
+                for (const toolDep of skill.dependencies.tools) {
+                    if (toolDep.type === 'mcp' && toolDep.url) {
+                        // Dynamically add MCP server from skill
+                        // Note: This is a simplified handling. 
+                        // Real implementation might need to handle duplicates/conflicts
+                        if (!this.mcpServers) this.mcpServers = {};
+                        this.mcpServers[`skill-${skill.name}-${toolDep.value}`] = {
+                            url: toolDep.url,
+                            headers: {} 
+                        };
+                    }
+                }
+            }
+        }
+    }
+
     const { includeMcpTools } = params;
     if (includeMcpTools ?? true) {
       if (this.mcpLoaded) return;
@@ -126,6 +166,44 @@ class Agent extends EventEmitter {
     }
   }
 
+
+  private getSystemPrompt(): string {
+    let prompt = "You are a helpful coding assistant.\n";
+    
+    if (this.loadedSkills && this.loadedSkills.skills.length > 0) {
+        prompt += "\n## Skills Index\n";
+        prompt += "You have access to the following skills. Use the `skills` tool with action `get` to inject full instructions when needed.\n\n";
+        
+        for (const skill of this.loadedSkills.skills) {
+            prompt += `- ${skill.name}: ${skill.description}`;
+            if (skill.shortDescription) {
+                prompt += ` (${skill.shortDescription})`;
+            }
+            prompt += "\n";
+        }
+    }
+
+    if (this.injectedSkillDetails.size > 0) {
+        prompt += "\n## Skill Details (Injected)\n";
+        for (const [name, details] of this.injectedSkillDetails.entries()) {
+            prompt += `\n### ${name}\n`;
+            prompt += `${details}\n`;
+        }
+    }
+    return prompt;
+  }
+
+  private findSkillByName(name: string): SkillMetadata | undefined {
+    if (!this.loadedSkills) return undefined;
+    const needle = name.trim().toLowerCase();
+    return this.loadedSkills.skills.find(skill => skill.name.toLowerCase() === needle);
+  }
+
+  private injectSkillDetails(name: string, details: string): boolean {
+    if (this.injectedSkillDetails.has(name)) return false;
+    this.injectedSkillDetails.set(name, details);
+    return true;
+  }
 
   private getToolSchemas(): Anthropic.Tool[] {
     return Array.from(this.tools.values()).map((tool) => tool.getSchema());
@@ -155,6 +233,7 @@ class Agent extends EventEmitter {
           messages: this.conversationHistory,
           model: this.model,
           stream: true,
+          system: this.getSystemPrompt(),
           tools: this.getToolSchemas(),
         });
 
