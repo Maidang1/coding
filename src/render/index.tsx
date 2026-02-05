@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useInput, Box, Text, useApp } from 'ink';
+import { useState, useEffect } from 'react';
+import { useInput, Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
 import { Provider, useAtomValue } from 'jotai';
 import { historyAtom } from './state/history';
@@ -89,7 +89,7 @@ const WelcomeHeader = () => {
   );
 };
 
-const MessageItem = ({ item, index }: { item: { role: string; content: string }; index: number }) => {
+const MessageItem = ({ item }: { item: { role: string; content: string } }) => {
   const getRoleColor = (role: string) => {
     switch (role) {
       case 'user':
@@ -255,6 +255,42 @@ const App = () => {
       ]);
     };
 
+    const handleMcpReconnectAttempt = (serverName: string, attempt: number, maxRetries: number) => {
+      const messageList = globalStore.get(messageListAtom) ?? [];
+      globalStore.set(messageListAtom, [
+        ...messageList,
+        {
+          role: 'system',
+          content: `🔄 MCP 重连中: ${serverName} (尝试 ${attempt}/${maxRetries})`,
+        },
+      ]);
+    };
+
+    const handleMcpHealthCheck = (serverName: string, _latency: number, healthy: boolean) => {
+      if (!healthy) {
+        const messageList = globalStore.get(messageListAtom) ?? [];
+        globalStore.set(messageListAtom, [
+          ...messageList,
+          {
+            role: 'system',
+            content: `⚠️ MCP 健康检查失败: ${serverName}`,
+          },
+        ]);
+      }
+      // 健康的情况下不显示消息，避免刷屏
+    };
+
+    const handleMcpCacheHit = (serverName: string) => {
+      const messageList = globalStore.get(messageListAtom) ?? [];
+      globalStore.set(messageListAtom, [
+        ...messageList,
+        {
+          role: 'system',
+          content: `⚡ MCP 缓存命中: ${serverName}`,
+        },
+      ]);
+    };
+
     const handleError = (error: Error) => {
       console.error('Agent error:', error);
     };
@@ -268,6 +304,9 @@ const App = () => {
     agent.on('mcpServerConnectStart', handleMcpConnectStart);
     agent.on('mcpServerConnectSuccess', handleMcpConnectSuccess);
     agent.on('mcpServerConnectError', handleMcpConnectError);
+    agent.on('mcpReconnectAttempt', handleMcpReconnectAttempt);
+    agent.on('mcpHealthCheck', handleMcpHealthCheck);
+    agent.on('mcpCacheHit', handleMcpCacheHit);
     agent.on('error', handleError);
 
     return () => {
@@ -280,6 +319,9 @@ const App = () => {
       agent.off('mcpServerConnectStart', handleMcpConnectStart);
       agent.off('mcpServerConnectSuccess', handleMcpConnectSuccess);
       agent.off('mcpServerConnectError', handleMcpConnectError);
+      agent.off('mcpReconnectAttempt', handleMcpReconnectAttempt);
+      agent.off('mcpHealthCheck', handleMcpHealthCheck);
+      agent.off('mcpCacheHit', handleMcpCacheHit);
       agent.off('error', handleError);
     };
   }, []);
@@ -325,7 +367,7 @@ const App = () => {
 
         <Box flexDirection='column' gap={1}>
           {messages.map((item, index) => (
-            <MessageItem key={index} item={item} index={index} />
+            <MessageItem key={index} item={item} />
           ))}
           {loading && (
             <Box paddingLeft={2}>

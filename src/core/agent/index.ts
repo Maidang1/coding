@@ -5,6 +5,7 @@ import { Tool, bashTool, SkillsTool } from "../tools";
 import { getEffectiveConfig, type McpServerConfig } from "../config";
 import { loadMcpTools } from "../mcp";
 import { SkillsManager, type SkillLoadOutcome, type SkillMetadata } from "../skills";
+import { McpDependencyLoader } from "../skills/integration/mcp-loader";
 import * as os from "os";
 import * as path from "path";
 
@@ -72,6 +73,9 @@ export interface AgentEvents {
   mcpServerConnectStart: (serverName: string) => void;
   mcpServerConnectSuccess: (serverName: string, toolCount: number) => void;
   mcpServerConnectError: (serverName: string, error: Error) => void;
+  mcpReconnectAttempt: (serverName: string, attempt: number, maxRetries: number) => void;
+  mcpHealthCheck: (serverName: string, latency: number, healthy: boolean) => void;
+  mcpCacheHit: (serverName: string) => void;
   error: (error: Error) => void;
 }
 
@@ -122,26 +126,37 @@ class Agent extends EventEmitter {
   async init(params: { includeMcpTools?: boolean } = {}): Promise<void> {
     // Load skills
     const cwd = process.cwd();
-    this.loadedSkills = this.skillsManager.getSkillsForCwd(cwd);
-    
-    // Process skill dependencies (e.g. MCP servers)
-    if (this.loadedSkills) {
-        for (const skill of this.loadedSkills.skills) {
-            if (skill.dependencies?.tools) {
-                for (const toolDep of skill.dependencies.tools) {
-                    if (toolDep.type === 'mcp' && toolDep.url) {
-                        // Dynamically add MCP server from skill
-                        // Note: This is a simplified handling. 
-                        // Real implementation might need to handle duplicates/conflicts
-                        if (!this.mcpServers) this.mcpServers = {};
-                        this.mcpServers[`skill-${skill.name}-${toolDep.value}`] = {
-                            url: toolDep.url,
-                            headers: {} 
-                        };
-                    }
-                }
-            }
+    this.loadedSkills = await this.skillsManager.getSkillsForCwd(cwd);
+
+    // Process skill dependencies using the new dependency loader
+    if (this.loadedSkills && this.loadedSkills.skills.length > 0) {
+      const mcpLoader = new McpDependencyLoader();
+      const { mcpServers, warnings } = mcpLoader.loadDependencies(
+        this.loadedSkills.skills,
+        this.mcpServers
+      );
+
+      // 报告警告
+      for (const warning of warnings) {
+        console.warn(`[Skills] ${warning}`);
+      }
+
+      // 合并 MCP 服务器配置
+      this.mcpServers = mcpServers;
+
+      // 验证依赖
+      const validation = mcpLoader.validateDependencies(
+        this.loadedSkills.skills,
+        mcpServers
+      );
+
+      if (!validation.valid) {
+        for (const missing of validation.missingDependencies) {
+          console.warn(
+            `[Skills] Skill "${missing.skill}" requires MCP server "${missing.server}" but it is not configured`
+          );
         }
+      }
     }
 
     const { includeMcpTools } = params;
@@ -156,6 +171,15 @@ class Agent extends EventEmitter {
         },
         onServerConnectError: (serverName, error) => {
           this.emit("mcpServerConnectError", serverName, error);
+        },
+        onReconnectAttempt: (serverName, attempt, maxRetries) => {
+          this.emit("mcpReconnectAttempt", serverName, attempt, maxRetries);
+        },
+        onHealthCheck: (serverName, latency, healthy) => {
+          this.emit("mcpHealthCheck", serverName, latency, healthy);
+        },
+        onCacheHit: (serverName) => {
+          this.emit("mcpCacheHit", serverName);
         },
       });
       for (const tool of mcpTools) {

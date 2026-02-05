@@ -10,12 +10,39 @@ export type ClaudeSettings = {
 };
 
 export type McpServerConfig = {
+  // 传输方式配置
   command?: string;
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
+
+  // 启用/禁用控制
+  enabled?: boolean; // 默认 true
+
+  // 超时配置
+  startupTimeoutSec?: number; // 启动超时（默认 30s）
+  toolTimeoutSec?: number; // 工具调用超时（默认 60s）
+
+  // 工具过滤
+  enabledTools?: string[]; // 工具白名单
+  disabledTools?: string[]; // 工具黑名单
+
+  // 重连配置
+  maxRetries?: number; // 最大重试次数（默认 3）
+  retryDelay?: number; // 初始重试延迟（默认 1000ms）
+
+  // 健康检查配置
+  healthCheckInterval?: number; // 健康检查间隔（默认 60000ms）
+
+  // 认证配置
+  auth?: {
+    type: "bearer" | "oauth" | "basic";
+    token?: string;
+    username?: string;
+    password?: string;
+  };
 };
 
 export type EffectiveConfig = {
