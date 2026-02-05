@@ -1,0 +1,50 @@
+export type SessionEvent =
+  | { type: "session_start"; ts: string; sessionId: string; projectRoot: string }
+  | { type: "user_message"; ts: string; content: string }
+  | { type: "assistant_start"; ts: string; content: string }
+  | { type: "assistant_delta"; ts: string; delta: string }
+  | { type: "assistant_end"; ts: string }
+  | { type: "tool_use"; ts: string; toolName: string; input: unknown; preview?: string }
+  | {
+      type: "tool_result";
+      ts: string;
+      toolName: string;
+      ok: boolean;
+      content: string;
+      filesChanged?: string[];
+    }
+  | {
+      type: "confirm_request";
+      ts: string;
+      confirmId: string;
+      toolName: string;
+      reason: string;
+      preview?: string;
+    }
+  | { type: "confirm_response"; ts: string; confirmId: string; allowed: boolean }
+  | { type: "error"; ts: string; message: string; stack?: string };
+
+export type EnvSnapshot = {
+  ts: string;
+  os: {
+    platform: string;
+    release: string;
+    arch: string;
+    cpus: number;
+  };
+  runtime: {
+    bunVersion?: string;
+    nodeVersion: string;
+  };
+  shell?: string;
+  cwd: string;
+  git?: {
+    branch?: string;
+    status?: string;
+  };
+};
+
+export type ExportOptions = {
+  sessionDir: string;
+  outPath: string;
+};

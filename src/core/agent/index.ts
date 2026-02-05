@@ -1,13 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { EventEmitter } from "events";
 import { setLoading } from "../../render/state/loading";
-import { Tool, bashTool, SkillsTool } from "../tools";
+import { Tool, bashTool, searchTool, SkillsTool, FsReadTool, FsWriteTool, FsPatchTool } from "../tools";
 import { getEffectiveConfig, type McpServerConfig } from "../config";
 import { loadMcpTools } from "../mcp";
 import { SkillsManager, type SkillLoadOutcome, type SkillMetadata } from "../skills";
 import { McpDependencyLoader } from "../skills/integration/mcp-loader";
 import * as os from "os";
 import * as path from "path";
+import { SafetyPolicy } from "../safety";
+import { SessionLogger, collectEnvSnapshot } from "../logging";
+import type { ToolExecutionResult } from "../tools/base";
 
 function repairJsonIfUnbalanced(value: string): string {
   const stack: string[] = [];
@@ -68,8 +71,19 @@ export interface AgentEvents {
   }) => void;
   assistantMessageDelta: (delta: string) => void;
   assistantMessageEnd: () => void;
-  toolUse: (toolName: string, input: any) => void;
-  toolResult: (toolName: string, result: string) => void;
+  toolUse: (event: { toolUseId: string; toolName: string; input: unknown; preview?: string }) => void;
+  toolResult: (event: {
+    toolUseId: string;
+    toolName: string;
+    result: string;
+    filesChanged?: string[];
+  }) => void;
+  confirmRequest: (request: {
+    id: string;
+    toolName: string;
+    reason: string;
+    preview?: string;
+  }) => void;
   mcpServerConnectStart: (serverName: string) => void;
   mcpServerConnectSuccess: (serverName: string, toolCount: number) => void;
   mcpServerConnectError: (serverName: string, error: Error) => void;
@@ -90,6 +104,13 @@ class Agent extends EventEmitter {
   private skillsManager: SkillsManager;
   private loadedSkills: SkillLoadOutcome | null = null;
   private injectedSkillDetails: Map<string, string> = new Map();
+  readonly sessionId: string;
+  private projectRoot: string;
+  private safety: SafetyPolicy;
+  private logger: SessionLogger;
+  private confirmResolvers: Map<string, (allowed: boolean) => void> = new Map();
+  private confirmCounter = 0;
+  private localToolCounter = 0;
 
   constructor(params: {
     model: string;
@@ -109,7 +130,31 @@ class Agent extends EventEmitter {
         apiKey: config.apiKey,
       });
     this.tools = new Map<string, Tool>(tools ?? []);
+    this.projectRoot = process.cwd();
+    this.sessionId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const allowedWriteRoots = config.safety?.allowedWriteRoots?.map((p) =>
+      path.isAbsolute(p) ? p : path.resolve(this.projectRoot, p),
+    );
+    const baseDirRaw = config.logging?.baseDir;
+    const baseDir = baseDirRaw
+      ? path.isAbsolute(baseDirRaw)
+        ? baseDirRaw
+        : path.resolve(this.projectRoot, baseDirRaw)
+      : undefined;
+
+    this.safety = new SafetyPolicy({
+      projectRoot: this.projectRoot,
+      allowedWriteRoots,
+      autoAllowedBashPrefixes: config.safety?.autoAllowedBashPrefixes,
+    });
+    this.logger = new SessionLogger({ sessionId: this.sessionId, projectRoot: this.projectRoot, baseDir });
+    this.logger.writeJson("env.json", collectEnvSnapshot(this.projectRoot));
+
     this.tools.set(bashTool.name, bashTool);
+    this.tools.set(searchTool.name, searchTool);
+    this.tools.set("fs_read", new FsReadTool({ projectRoot: this.projectRoot }));
+    this.tools.set("fs_write", new FsWriteTool({ projectRoot: this.projectRoot }));
+    this.tools.set("fs_patch", new FsPatchTool({ projectRoot: this.projectRoot }));
     const skillsTool = new SkillsTool({
       listSkills: () => this.loadedSkills?.skills ?? [],
       getSkillByName: (name) => this.findSkillByName(name),
@@ -121,6 +166,30 @@ class Agent extends EventEmitter {
     // Initialize SkillsManager
     const codexHome = path.join(os.homedir(), ".codex");
     this.skillsManager = new SkillsManager(codexHome);
+  }
+
+  confirmResponse(confirmId: string, allowed: boolean): void {
+    const resolver = this.confirmResolvers.get(confirmId);
+    if (!resolver) return;
+    this.confirmResolvers.delete(confirmId);
+    this.logger.append({ type: "confirm_response", ts: new Date().toISOString(), confirmId, allowed });
+    resolver(allowed);
+  }
+
+  private requestConfirmation(params: { toolName: string; reason: string; preview?: string }): Promise<boolean> {
+    const id = `${Date.now()}-${++this.confirmCounter}`;
+    this.logger.append({
+      type: "confirm_request",
+      ts: new Date().toISOString(),
+      confirmId: id,
+      toolName: params.toolName,
+      reason: params.reason,
+      preview: params.preview,
+    });
+    this.emit("confirmRequest", { id, toolName: params.toolName, reason: params.reason, preview: params.preview });
+    return new Promise<boolean>((resolve) => {
+      this.confirmResolvers.set(id, resolve);
+    });
   }
 
   async init(params: { includeMcpTools?: boolean } = {}): Promise<void> {
@@ -193,6 +262,10 @@ class Agent extends EventEmitter {
 
   private getSystemPrompt(): string {
     let prompt = "You are a helpful coding assistant.\n";
+    prompt +=
+      "\nYou can use tools to read/search files, write/patch files, and run shell commands.\n" +
+      "- Read-only tools are auto-allowed.\n" +
+      "- Writes and most commands require user confirmation.\n";
     
     if (this.loadedSkills && this.loadedSkills.skills.length > 0) {
         prompt += "\n## Skills Index\n";
@@ -233,18 +306,79 @@ class Agent extends EventEmitter {
     return Array.from(this.tools.values()).map((tool) => tool.getSchema());
   }
 
-  private async executeTool(toolName: string, input: any): Promise<string> {
+  private normalizeToolResult(result: ToolExecutionResult): { content: string; filesChanged?: string[] } {
+    if (typeof result === "string") return { content: result };
+    return { content: result.content, filesChanged: result.filesChanged };
+  }
+
+  private async executeTool(toolName: string, input: unknown): Promise<{ content: string; filesChanged?: string[] }> {
     const tool = this.tools.get(toolName);
     if (!tool) {
-      return `Error: Unknown tool "${toolName}"`;
+      return { content: `Error: Unknown tool "${toolName}"` };
     }
-    return await tool.execute(input);
+
+    const preview = tool.getPreview?.(input as any);
+    const decision = this.safety.decide({ type: "tool", toolName, input, preview });
+    if (!decision.allowed) {
+      return { content: `Blocked by safety policy: ${decision.reason}` };
+    }
+
+    if (decision.requiresConfirm) {
+      const allowed = await this.requestConfirmation({ toolName, reason: decision.reason, preview });
+      if (!allowed) return { content: `Cancelled by user: ${toolName}` };
+    }
+
+    this.logger.append({ type: "tool_use", ts: new Date().toISOString(), toolName, input, preview });
+    try {
+      const raw = await tool.execute(input);
+      const normalized = this.normalizeToolResult(raw);
+      this.logger.append({
+        type: "tool_result",
+        ts: new Date().toISOString(),
+        toolName,
+        ok: true,
+        content: normalized.content,
+        filesChanged: normalized.filesChanged,
+      });
+      if (normalized.filesChanged?.length) {
+        this.logger.recordFilesChanged(normalized.filesChanged);
+      }
+      return normalized;
+    } catch (error: any) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.append({
+        type: "tool_result",
+        ts: new Date().toISOString(),
+        toolName,
+        ok: false,
+        content: message,
+      });
+      return { content: `Error: ${message}` };
+    }
+  }
+
+  async runTool(params: { toolName: string; input: unknown; toolUseId?: string; preview?: string }): Promise<{
+    content: string;
+    filesChanged?: string[];
+  }> {
+    const toolUseId = params.toolUseId ?? `local-${Date.now()}-${++this.localToolCounter}`;
+    const preview = params.preview ?? this.tools.get(params.toolName)?.getPreview?.(params.input as any);
+    this.emit("toolUse", { toolUseId, toolName: params.toolName, input: params.input, preview });
+    const result = await this.executeTool(params.toolName, params.input);
+    this.emit("toolResult", {
+      toolUseId,
+      toolName: params.toolName,
+      result: result.content,
+      filesChanged: result.filesChanged,
+    });
+    return result;
   }
 
   async runStream(input: string) {
     try {
       setLoading(true);
       this.emit("userMessage", { role: "user", content: input });
+      this.logger.append({ type: "user_message", ts: new Date().toISOString(), content: input });
 
       // 添加用户消息到历史
       this.conversationHistory.push({ role: "user", content: input });
@@ -281,9 +415,19 @@ class Agent extends EventEmitter {
                   role: "assistant",
                   content: messageEvent.delta.text,
                 });
+                this.logger.append({
+                  type: "assistant_start",
+                  ts: new Date().toISOString(),
+                  content: messageEvent.delta.text,
+                });
                 isFirstDelta = false;
               } else {
                 this.emit("assistantMessageDelta", messageEvent.delta.text);
+                this.logger.append({
+                  type: "assistant_delta",
+                  ts: new Date().toISOString(),
+                  delta: messageEvent.delta.text,
+                });
               }
               // 更新内容
               if (
@@ -325,6 +469,7 @@ class Agent extends EventEmitter {
         });
 
         this.emit("assistantMessageEnd");
+        this.logger.append({ type: "assistant_end", ts: new Date().toISOString() });
 
         // 添加助手响应到历史
         this.conversationHistory.push({
@@ -338,15 +483,17 @@ class Agent extends EventEmitter {
 
           for (const block of currentContent) {
             if (block.type === "tool_use") {
+              const toolUseId = block.id;
               const toolName = block.name;
               const toolInput = block.input;
-              this.emit("toolUse", toolName, toolInput);
+              const preview = this.tools.get(toolName)?.getPreview?.(toolInput as any);
+              this.emit("toolUse", { toolUseId, toolName, input: toolInput, preview });
               const result = await this.executeTool(toolName, toolInput);
-              this.emit("toolResult", toolName, result);
+              this.emit("toolResult", { toolUseId, toolName, result: result.content, filesChanged: result.filesChanged });
               toolResults.push({
                 type: "tool_result",
-                tool_use_id: block.id,
-                content: result,
+                tool_use_id: toolUseId,
+                content: result.content,
               });
             }
           }
@@ -359,6 +506,13 @@ class Agent extends EventEmitter {
       }
     } catch (error) {
       this.emit("error", error as Error);
+      const err = error as any;
+      this.logger.append({
+        type: "error",
+        ts: new Date().toISOString(),
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     } finally {
       setLoading(false);
     }

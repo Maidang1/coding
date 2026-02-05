@@ -81,7 +81,7 @@
 - `env.json`: OS、shell、runtime、git 状态
 
 导出：
-- `agent export --session <id>` → zip / markdown 报告
+- `agent export <id>`（兼容 `--session <id>`）→ zip / markdown 报告
 
 ## User Experience (TUI)
 - 左侧：当前任务状态（工具执行、文件变更数量）

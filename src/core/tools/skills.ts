@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
-import { Tool } from "./base";
+import { Tool, type ToolExecutionResult } from "./base";
 import type { SkillMetadata } from "../skills";
 
 type SkillsToolOptions = {
@@ -52,7 +52,7 @@ export class SkillsTool extends Tool {
     };
   }
 
-  execute(input: SkillsToolInput): string {
+  execute(input: SkillsToolInput): ToolExecutionResult {
     if (!input || !input.action) {
       return "Error: Missing required field 'action'.";
     }

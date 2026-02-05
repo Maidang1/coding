@@ -1,12 +1,12 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { execSync } from "child_process";
-import { Tool } from "./base";
+import { Tool, type ToolExecutionResult } from "./base";
 
 export class BashTool extends Tool {
   name = "bash";
   description = "Execute bash commands in the terminal. Use this to run shell commands, scripts, or system operations.";
 
-  getSchema(): Anthropic.Tool {
+  override getSchema(): Anthropic.Tool {
     return {
       name: this.name,
       description: this.description,
@@ -23,7 +23,11 @@ export class BashTool extends Tool {
     };
   }
 
-  execute(input: { command: string }): string {
+  override getPreview(input: { command: string }): string {
+    return `Run command:\n${input.command}`;
+  }
+
+  override execute(input: { command: string }): ToolExecutionResult {
     try {
       const result = execSync(input.command, {
         encoding: "utf-8",

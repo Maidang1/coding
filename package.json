@@ -5,7 +5,7 @@
   "type": "module",
   "private": false,
   "scripts": {
-    "start": "bun run src/cli/index.tsx"
+    "start": "bun run src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -19,6 +19,7 @@
     "@anthropic-ai/sdk": "^0.72.1",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "@types/js-yaml": "^4.0.9",
+    "cac": "^6.7.14",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",
     "jotai": "^2.17.0",

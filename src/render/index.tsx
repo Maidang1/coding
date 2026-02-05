@@ -1,147 +1,156 @@
-import { useState, useEffect } from 'react';
-import { useInput, Box, Text } from 'ink';
-import TextInput from 'ink-text-input';
-import { Provider, useAtomValue } from 'jotai';
-import { historyAtom } from './state/history';
-import { messageListAtom } from './state/message';
-import { loadingAtom } from './state/loading';
-import { globalStore } from './state/store';
-import { Agent } from '../core/agent';
-import { getEffectiveConfig } from '../core/config';
-import * as path from 'path';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useInput } from "ink";
+import TextInput from "ink-text-input";
+import { Provider, useAtomValue } from "jotai";
+import * as path from "path";
+import { Agent } from "../core/agent";
+import { getEffectiveConfig } from "../core/config";
+import { Timeline } from "./components/Timeline";
+import { StatusBar } from "./components/StatusBar";
+import { runSlashCommand } from "./commands";
+import { historyAtom } from "./state/history";
+import { loadingAtom } from "./state/loading";
+import { globalStore } from "./state/store";
+import { COLORS } from "./theme";
+import {
+  addChatEvent,
+  addConfirmEvent,
+  addErrorEvent,
+  addMcpEvent,
+  addToolEvent,
+  appendChatContent,
+  completeToolEvent,
+  eventsAtom,
+  resolveConfirmEvent,
+  toggleExpanded,
+  type UiMode,
+} from "./state/events";
 
 const { model } = getEffectiveConfig();
 const agent = new Agent({ model });
 
-const COLORS = {
-  pink: '#d33682',
-  orange: '#cb4b16',
-  cyan: '#2aa198',
-  green: '#859900',
-  yellow: '#b58900',
-  gray: '#586e75',
-  darkGray: '#073642',
-  lightGray: '#93a1a1',
-  white: '#fdf6e3',
-  red: '#dc322f',
-};
-
 const PINK_PIG = `
-    (\   /)
+    (\\   /)
      (◕‿◕)
    ~~~∧∧∧~~~
 `;
 
-const WelcomeHeader = () => {
+function WelcomeHeader(): React.JSX.Element {
   const cwd = process.cwd();
   const projectName = path.basename(cwd);
+  const columns = process.stdout.columns ?? 80;
+  const compact = columns < 90;
 
   return (
-    <Box flexDirection='column' paddingBottom={1}>
-      <Box>
-        <Text color={COLORS.red}>╭─────────────────────────────────────────────────────────────────────────╮</Text>
-      </Box>
-      <Box>
-        <Text color={COLORS.red}>│  </Text>
-        <Text bold color={COLORS.pink}>Coding Agent</Text>
-        <Text color={COLORS.lightGray}> v1.0.0</Text>
-        <Text>                                                    </Text>
-        <Text color={COLORS.red}>│</Text>
-      </Box>
-      <Box>
-        <Text color={COLORS.red}>├─────────────────────────────────────────────────────────────────────────┤</Text>
-      </Box>
-      <Box flexDirection='row'>
-        <Box width={32} flexDirection='column' paddingLeft={2}>
-          <Text bold color={COLORS.white}>Welcome back!</Text>
-          <Box paddingTop={1}>
-            <Text color={COLORS.pink}>{PINK_PIG}</Text>
-          </Box>
-          <Box paddingTop={1}>
-            <Text bold color={COLORS.white}>{projectName}</Text>
-          </Box>
+    <Box flexDirection="column" paddingBottom={1}>
+      <Box borderStyle="round" borderColor={COLORS.border} paddingX={2} paddingY={1} flexDirection="column">
+        <Box justifyContent="space-between" flexWrap="wrap">
           <Box>
-            <Text color={COLORS.gray}>{cwd}</Text>
+            <Text bold color={COLORS.accent}>
+              Coding Agent
+            </Text>
+            <Text dimColor color={COLORS.muted}>
+              {" "}
+              v1.0.0
+            </Text>
           </Box>
-        </Box>
-        <Box>
-          <Text color={COLORS.red}>│</Text>
-        </Box>
-        <Box flexDirection='column' paddingLeft={2}>
-          <Box>
-            <Text bold color={COLORS.pink}>Tips for getting started</Text>
-          </Box>
-          <Box paddingBottom={1}>
-            <Text color={COLORS.lightGray}>Run /init to create a CLAUDE.md file with instructions for Claude</Text>
-          </Box>
-          <Box>
-            <Text bold color={COLORS.pink}>Recent activity</Text>
-          </Box>
-          <Box>
-            <Text color={COLORS.lightGray}>No recent activity</Text>
-          </Box>
-        </Box>
-      </Box>
-      <Box>
-        <Text color={COLORS.red}>╰─────────────────────────────────────────────────────────────────────────╯</Text>
-      </Box>
-    </Box>
-  );
-};
-
-const MessageItem = ({ item }: { item: { role: string; content: string } }) => {
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'user':
-        return COLORS.cyan;
-      case 'assistant':
-        return COLORS.white;
-      case 'system':
-        return COLORS.yellow;
-      default:
-        return COLORS.lightGray;
-    }
-  };
-
-  const getRoleLabel = (role: string) => {
-    switch (role) {
-      case 'user':
-        return '❯';
-      case 'assistant':
-        return '●';
-      case 'system':
-        return '◆';
-      default:
-        return '•';
-    }
-  };
-
-  const lines = item.content.split('\n');
-
-  return (
-    <Box flexDirection='column' paddingBottom={1}>
-      <Box>
-        <Text color={getRoleColor(item.role)}>{getRoleLabel(item.role)} </Text>
-        <Text bold color={getRoleColor(item.role)}>{item.role}</Text>
-      </Box>
-      {lines.map((line, lineIndex) => (
-        <Box key={lineIndex} paddingLeft={2}>
-          <Text color={item.role === 'user' ? COLORS.cyan : item.role === 'assistant' ? COLORS.lightGray : COLORS.gray}>
-            {line || ' '}
+          <Text dimColor color={COLORS.muted}>
+            Press <Text bold>Esc</Text> for timeline • <Text bold>/help</Text> for commands
           </Text>
         </Box>
-      ))}
+
+        <Box paddingTop={1} flexDirection={compact ? "column" : "row"} flexWrap="wrap">
+          <Box flexDirection="column" width={compact ? undefined : 34} paddingRight={compact ? 0 : 2}>
+            <Text bold color={COLORS.text}>
+              Welcome back
+            </Text>
+            <Box paddingTop={1}>
+              <Text dimColor color={COLORS.accent}>
+                {PINK_PIG}
+              </Text>
+            </Box>
+            <Box paddingTop={1} flexDirection="column">
+              <Text bold color={COLORS.text}>
+                {projectName}
+              </Text>
+              <Text dimColor color={COLORS.muted}>
+                {cwd}
+              </Text>
+              <Text dimColor color={COLORS.muted}>
+                session: {agent.sessionId}
+              </Text>
+            </Box>
+          </Box>
+
+          <Box flexDirection="column" paddingTop={compact ? 1 : 0} paddingLeft={compact ? 0 : 2} flexGrow={1}>
+            <Text bold color={COLORS.accent}>
+              Getting started
+            </Text>
+            <Box flexDirection="column" paddingTop={1}>
+              <Text color={COLORS.textSoft}>
+                • <Text bold>/init</Text> — create `CLAUDE.md` for project instructions
+              </Text>
+              <Text color={COLORS.textSoft}>
+                • <Text bold>/model &lt;name&gt;</Text> — switch model
+              </Text>
+            </Box>
+
+            <Box paddingTop={1}>
+              <Text bold color={COLORS.accent}>
+                Shortcuts
+              </Text>
+            </Box>
+            <Box flexDirection="column" paddingTop={1}>
+              <Text color={COLORS.textSoft}>
+                • <Text bold>Esc</Text> — toggle input/timeline
+              </Text>
+              <Text color={COLORS.textSoft}>
+                • Timeline: <Text bold>↑/↓</Text> select • <Text bold>Enter</Text>/<Text bold>e</Text> expand •{" "}
+                <Text bold>i</Text> type
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
     </Box>
   );
-};
+}
 
-const App = () => {
+function separator(): React.JSX.Element {
+  const columns = process.stdout.columns ?? 80;
+  const line = "─".repeat(Math.max(20, Math.min(columns, 120)));
+  return (
+    <Text dimColor color={COLORS.dim}>
+      {line}
+    </Text>
+  );
+}
+
+function isSelectableEvent(type: string): boolean {
+  return type === "tool" || type === "confirm" || type === "mcp" || type === "error";
+}
+
+function App(): React.JSX.Element {
   const history = useAtomValue(historyAtom, { store: globalStore });
-  const messages = useAtomValue(messageListAtom, { store: globalStore });
+  const events = useAtomValue(eventsAtom, { store: globalStore });
   const loading = useAtomValue(loadingAtom, { store: globalStore });
-  const [_, setHistoryIndex] = useState(0);
-  const [query, setQuery] = useState('');
+
+  const [query, setQuery] = useState("");
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [mode, setMode] = useState<UiMode>("input");
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [modelLabel, setModelLabel] = useState(agent.model);
+
+  const [confirm, setConfirm] = useState<null | { id: string; toolName: string; reason: string; preview?: string }>(
+    null,
+  );
+
+  const assistantEventIdRef = useRef<string | null>(null);
+
+  const selectableEventIds = useMemo(() => {
+    return events.filter((e) => isSelectableEvent(e.type)).map((e) => e.id);
+  }, [events]);
 
   useEffect(() => {
     agent.init();
@@ -151,252 +160,228 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      setShowWelcome(false);
-    }
-  }, [messages.length]);
+    const hasAnyChat = events.some((e) => e.type === "chat" && (e.role === "user" || e.role === "assistant"));
+    if (hasAnyChat) setShowWelcome(false);
+  }, [events]);
 
   useEffect(() => {
-    const handleUserMessage = (message: { role: 'user'; content: string }) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [...messageList, message]);
+    if (mode !== "timeline") return;
+    if (selectedEventId) return;
+    if (!selectableEventIds.length) return;
+    setSelectedEventId(selectableEventIds[selectableEventIds.length - 1] ?? null);
+  }, [mode, selectableEventIds, selectedEventId]);
+
+  useEffect(() => {
+    const handleUserMessage = (message: { role: "user"; content: string }) => {
+      addChatEvent({ role: "user", content: message.content });
       globalStore.set(loadingAtom, true);
     };
 
-    const handleAssistantStart = (message: {
-      role: 'assistant';
-      content: string;
-    }) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [...messageList, message]);
+    const handleAssistantStart = (message: { role: "assistant"; content: string }) => {
+      const id = addChatEvent({ role: "assistant", content: message.content });
+      assistantEventIdRef.current = id;
     };
 
     const handleAssistantDelta = (delta: string) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      const lastMessage = messageList[messageList.length - 1];
-      if (lastMessage && lastMessage.role === 'assistant') {
-        const updatedMessages = [...messageList];
-        updatedMessages[updatedMessages.length - 1] = {
-          ...lastMessage,
-          content: lastMessage.content + delta,
-        };
-        globalStore.set(messageListAtom, updatedMessages);
-      }
+      const id = assistantEventIdRef.current;
+      if (!id) return;
+      appendChatContent({ id, delta });
     };
 
-    const handleAssistantMessageEnd = () => {
+    const handleAssistantEnd = () => {
+      assistantEventIdRef.current = null;
       globalStore.set(loadingAtom, false);
     };
 
-    const handleToolUse = (toolName: string, input: any) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      if (toolName === 'skills') {
-        const action = input?.action;
-        if (action === 'get') {
-          const name = input?.name || 'unknown';
-          globalStore.set(messageListAtom, [
-            ...messageList,
-            { role: 'system', content: `🧠 Skill 已调用: ${name}` },
-          ]);
-          return;
-        }
-        if (action === 'list') {
-          globalStore.set(messageListAtom, [
-            ...messageList,
-            { role: 'system', content: '🧠 请求技能列表' },
-          ]);
-          return;
-        }
-      }
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        {
-          role: 'system',
-          content: `🔧 使用工具: ${toolName}\n输入: ${JSON.stringify(input, null, 2)}`,
-        },
-      ]);
+    const handleToolUse = (event: { toolUseId: string; toolName: string; input: unknown; preview?: string }) => {
+      addToolEvent({ toolUseId: event.toolUseId, toolName: event.toolName, input: event.input, preview: event.preview });
     };
 
-    const handleToolResult = (toolName: string, result: string) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        { role: 'system', content: `✅ 工具结果: ${toolName}\n${result}` },
-      ]);
+    const handleToolResult = (event: { toolUseId: string; toolName: string; result: string; filesChanged?: string[] }) => {
+      completeToolEvent({ toolUseId: event.toolUseId, result: event.result, filesChanged: event.filesChanged });
     };
 
-    const handleMcpConnectStart = (serverName: string) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        { role: 'system', content: `🔌 MCP 连接中: ${serverName}` },
-      ]);
+    const handleConfirmRequest = (request: { id: string; toolName: string; reason: string; preview?: string }) => {
+      addConfirmEvent({ confirmId: request.id, toolName: request.toolName, reason: request.reason, preview: request.preview });
+      setConfirm(request);
     };
 
-    const handleMcpConnectSuccess = (serverName: string, toolCount: number) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        {
-          role: 'system',
-          content: `✅ MCP 已连接: ${serverName} (tools: ${toolCount})`,
-        },
-      ]);
-    };
-
-    const handleMcpConnectError = (serverName: string, error: Error) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        {
-          role: 'system',
-          content: `❌ MCP 连接失败: ${serverName}\n${error.message}`,
-        },
-      ]);
-    };
-
-    const handleMcpReconnectAttempt = (serverName: string, attempt: number, maxRetries: number) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        {
-          role: 'system',
-          content: `🔄 MCP 重连中: ${serverName} (尝试 ${attempt}/${maxRetries})`,
-        },
-      ]);
-    };
-
+    const handleMcpConnectStart = (serverName: string) => addMcpEvent(`Connecting: ${serverName}`, "info");
+    const handleMcpConnectSuccess = (serverName: string, toolCount: number) =>
+      addMcpEvent(`Connected: ${serverName} (tools: ${toolCount})`, "info");
+    const handleMcpConnectError = (serverName: string, error: Error) =>
+      addMcpEvent(`Connection error: ${serverName} — ${error.message}`, "error");
+    const handleMcpReconnectAttempt = (serverName: string, attempt: number, maxRetries: number) =>
+      addMcpEvent(`Reconnect: ${serverName} (${attempt}/${maxRetries})`, "warn");
     const handleMcpHealthCheck = (serverName: string, _latency: number, healthy: boolean) => {
-      if (!healthy) {
-        const messageList = globalStore.get(messageListAtom) ?? [];
-        globalStore.set(messageListAtom, [
-          ...messageList,
-          {
-            role: 'system',
-            content: `⚠️ MCP 健康检查失败: ${serverName}`,
-          },
-        ]);
-      }
-      // 健康的情况下不显示消息，避免刷屏
+      if (!healthy) addMcpEvent(`Health check failed: ${serverName}`, "warn");
     };
+    const handleMcpCacheHit = (serverName: string) => addMcpEvent(`Cache hit: ${serverName}`, "info");
 
-    const handleMcpCacheHit = (serverName: string) => {
-      const messageList = globalStore.get(messageListAtom) ?? [];
-      globalStore.set(messageListAtom, [
-        ...messageList,
-        {
-          role: 'system',
-          content: `⚡ MCP 缓存命中: ${serverName}`,
-        },
-      ]);
-    };
+    const handleError = (error: Error) => addErrorEvent({ message: error.message, stack: error.stack });
 
-    const handleError = (error: Error) => {
-      console.error('Agent error:', error);
-    };
-
-    agent.on('userMessage', handleUserMessage);
-    agent.on('assistantMessageStart', handleAssistantStart);
-    agent.on('assistantMessageDelta', handleAssistantDelta);
-    agent.on('assistantMessageEnd', handleAssistantMessageEnd);
-    agent.on('toolUse', handleToolUse);
-    agent.on('toolResult', handleToolResult);
-    agent.on('mcpServerConnectStart', handleMcpConnectStart);
-    agent.on('mcpServerConnectSuccess', handleMcpConnectSuccess);
-    agent.on('mcpServerConnectError', handleMcpConnectError);
-    agent.on('mcpReconnectAttempt', handleMcpReconnectAttempt);
-    agent.on('mcpHealthCheck', handleMcpHealthCheck);
-    agent.on('mcpCacheHit', handleMcpCacheHit);
-    agent.on('error', handleError);
+    agent.on("userMessage", handleUserMessage);
+    agent.on("assistantMessageStart", handleAssistantStart);
+    agent.on("assistantMessageDelta", handleAssistantDelta);
+    agent.on("assistantMessageEnd", handleAssistantEnd);
+    agent.on("toolUse", handleToolUse);
+    agent.on("toolResult", handleToolResult);
+    agent.on("confirmRequest", handleConfirmRequest);
+    agent.on("mcpServerConnectStart", handleMcpConnectStart);
+    agent.on("mcpServerConnectSuccess", handleMcpConnectSuccess);
+    agent.on("mcpServerConnectError", handleMcpConnectError);
+    agent.on("mcpReconnectAttempt", handleMcpReconnectAttempt);
+    agent.on("mcpHealthCheck", handleMcpHealthCheck);
+    agent.on("mcpCacheHit", handleMcpCacheHit);
+    agent.on("error", handleError);
 
     return () => {
-      agent.off('userMessage', handleUserMessage);
-      agent.off('assistantMessageStart', handleAssistantStart);
-      agent.off('assistantMessageDelta', handleAssistantDelta);
-      agent.off('assistantMessageEnd', handleAssistantMessageEnd);
-      agent.off('toolUse', handleToolUse);
-      agent.off('toolResult', handleToolResult);
-      agent.off('mcpServerConnectStart', handleMcpConnectStart);
-      agent.off('mcpServerConnectSuccess', handleMcpConnectSuccess);
-      agent.off('mcpServerConnectError', handleMcpConnectError);
-      agent.off('mcpReconnectAttempt', handleMcpReconnectAttempt);
-      agent.off('mcpHealthCheck', handleMcpHealthCheck);
-      agent.off('mcpCacheHit', handleMcpCacheHit);
-      agent.off('error', handleError);
+      agent.off("userMessage", handleUserMessage);
+      agent.off("assistantMessageStart", handleAssistantStart);
+      agent.off("assistantMessageDelta", handleAssistantDelta);
+      agent.off("assistantMessageEnd", handleAssistantEnd);
+      agent.off("toolUse", handleToolUse);
+      agent.off("toolResult", handleToolResult);
+      agent.off("confirmRequest", handleConfirmRequest);
+      agent.off("mcpServerConnectStart", handleMcpConnectStart);
+      agent.off("mcpServerConnectSuccess", handleMcpConnectSuccess);
+      agent.off("mcpServerConnectError", handleMcpConnectError);
+      agent.off("mcpReconnectAttempt", handleMcpReconnectAttempt);
+      agent.off("mcpHealthCheck", handleMcpHealthCheck);
+      agent.off("mcpCacheHit", handleMcpCacheHit);
+      agent.off("error", handleError);
     };
   }, []);
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
+    if (confirm) {
+      if (input.toLowerCase() === "y") {
+        agent.confirmResponse(confirm.id, true);
+        resolveConfirmEvent({ confirmId: confirm.id, allowed: true });
+        setConfirm(null);
+      } else if (input.toLowerCase() === "n" || key.escape) {
+        agent.confirmResponse(confirm.id, false);
+        resolveConfirmEvent({ confirmId: confirm.id, allowed: false });
+        setConfirm(null);
+      }
+      return;
+    }
+
+    if (key.escape) {
+      setMode((m) => (m === "input" ? "timeline" : "input"));
+      return;
+    }
+
+    if (mode === "timeline") {
+      if (!selectableEventIds.length) return;
+
+      if (key.upArrow) {
+        const currentIndex = selectedEventId ? selectableEventIds.indexOf(selectedEventId) : selectableEventIds.length;
+        const nextIndex = Math.max(0, currentIndex - 1);
+        setSelectedEventId(selectableEventIds[nextIndex] ?? null);
+        return;
+      }
+      if (key.downArrow) {
+        const currentIndex = selectedEventId ? selectableEventIds.indexOf(selectedEventId) : -1;
+        const nextIndex = Math.min(selectableEventIds.length - 1, currentIndex + 1);
+        setSelectedEventId(selectableEventIds[nextIndex] ?? null);
+        return;
+      }
+      if (input === "i") {
+        setMode("input");
+        return;
+      }
+      if (input === "e" || key.return) {
+        if (selectedEventId) toggleExpanded(selectedEventId);
+        return;
+      }
+      return;
+    }
+
     if (key.upArrow && history.length > 0) {
-      setHistoryIndex((pre) => {
-        const newIndex = Math.min(pre + 1, history.length - 1);
-        setQuery(history[newIndex] || '');
-        return newIndex;
-      });
+      const nextIndex = Math.min(historyIndex + 1, history.length - 1);
+      setHistoryIndex(nextIndex);
+      setQuery(history[nextIndex] || "");
+      return;
     }
     if (key.downArrow) {
-      setHistoryIndex((pre) => {
-        const newIndex = Math.max(0, pre - 1);
-        setQuery(history[newIndex] || '');
-        return newIndex;
-      });
+      const nextIndex = Math.max(0, historyIndex - 1);
+      setHistoryIndex(nextIndex);
+      setQuery(history[nextIndex] || "");
+      return;
     }
   });
 
   const handleSubmit = async () => {
-    if (!query.trim() || loading) return;
+    if (!query.trim() || loading || confirm) return;
 
     const currentQuery = query;
-    setQuery('');
+    setQuery("");
     setHistoryIndex(0);
+
+    const currentHistory = globalStore.get(historyAtom);
+    globalStore.set(historyAtom, [currentQuery, ...currentHistory].slice(0, 200));
+
+    const handled = await runSlashCommand(
+      {
+        agent,
+        setModelLabel,
+        setShowWelcome,
+        setMode,
+        setSelectedEventId,
+      },
+      currentQuery,
+    );
+    if (handled) return;
 
     agent.runStream(currentQuery);
   };
 
   return (
     <Provider store={globalStore}>
-      <Box flexDirection='column'>
+      <Box flexDirection="column">
         {showWelcome && (
           <>
             <WelcomeHeader />
-            <Box paddingTop={1} paddingBottom={1}>
-              <Text color={COLORS.lightGray}>/model to try Opus 4.5</Text>
-            </Box>
           </>
         )}
 
-        <Box flexDirection='column' gap={1}>
-          {messages.map((item, index) => (
-            <MessageItem key={index} item={item} />
-          ))}
-          {loading && (
-            <Box paddingLeft={2}>
-              <Text color={COLORS.gray}>Thinking...</Text>
-            </Box>
-          )}
-        </Box>
+        <Timeline events={events} mode={mode} selectedEventId={selectedEventId} />
 
-        <Box paddingTop={1} paddingBottom={1}>
-          <Text color={COLORS.gray}>──────────────────────────────────────────────────────────────────────────</Text>
-        </Box>
+        {loading && (
+          <Box paddingLeft={2}>
+            <Text dimColor color={COLORS.muted}>
+              Thinking…
+            </Text>
+          </Box>
+        )}
+
+        <Box paddingTop={1}>{separator()}</Box>
 
         <Box>
-          <Text color={loading ? COLORS.gray : COLORS.white}>&gt; </Text>
+          <Text color={loading ? COLORS.dim : COLORS.text}>&gt; </Text>
           <TextInput
-            placeholder={loading ? 'Waiting for response...' : 'Try "fix lint errors"'}
+            placeholder={
+              confirm
+                ? "Confirm pending…"
+                : mode === "timeline"
+                  ? "TIMELINE mode (press i to type)"
+                  : loading
+                    ? "Waiting for response..."
+                    : "Type a message or /help"
+            }
             value={query}
-            onChange={loading ? () => {} : setQuery}
+            onChange={loading || confirm || mode === "timeline" ? () => {} : setQuery}
             onSubmit={handleSubmit}
           />
         </Box>
 
-        <Box flexDirection='row' justifyContent='space-between' paddingTop={1}>
-          <Text color={COLORS.lightGray}>? for shortcuts</Text>
-          <Text color={COLORS.orange}>⌘ In index.tsx</Text>
+        <Box paddingTop={1}>
+          <StatusBar mode={mode} model={modelLabel} sessionId={agent.sessionId} />
         </Box>
       </Box>
     </Provider>
   );
-};
+}
 
 export { App };

@@ -7,6 +7,13 @@ export type ClaudeSettings = {
   model?: string;
   apiKeyHelper?: string;
   mcpServers?: Record<string, McpServerConfig>;
+  safety?: {
+    allowedWriteRoots?: string[];
+    autoAllowedBashPrefixes?: string[];
+  };
+  logging?: {
+    baseDir?: string;
+  };
 };
 
 export type McpServerConfig = {
@@ -51,6 +58,8 @@ export type EffectiveConfig = {
   authToken?: string;
   apiKey?: string;
   mcpServers: Record<string, McpServerConfig>;
+  safety?: ClaudeSettings["safety"];
+  logging?: ClaudeSettings["logging"];
   sources: string[];
 };
 
@@ -129,6 +138,6 @@ export function getEffectiveConfig(): EffectiveConfig {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const mcpServers = settings.mcpServers ?? {};
 
-  cachedConfig = { model, baseURL, authToken, apiKey, mcpServers, sources };
+  cachedConfig = { model, baseURL, authToken, apiKey, mcpServers, safety: settings.safety, logging: settings.logging, sources };
   return cachedConfig;
 }
