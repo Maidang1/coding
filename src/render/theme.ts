@@ -1,11 +1,13 @@
 export const COLORS = {
-  // Codex-like dark terminal palette
+  // Core terminal palette
   bg: "#1f232a",
   panel: "#2b3038",
   surface: "#1f232a",
   border: "#7a828c",
   row: "#2b3038",
 
+  // Brand and semantic accents
+  brand: "#ff9c7c",
   accent: "#9ad1c6",
   focus: "#9ad1c6",
   info: "#b9c7d6",
@@ -29,3 +31,22 @@ export const COLORS = {
   bgToolDone: "#252830",
   bgToolRunning: "#252a30",
 };
+
+export const INDENT = {
+  sm: 2,
+  md: 4,
+  lg: 6,
+} as const;
+
+export const SPACE = {
+  xs: 0,
+  sm: 1,
+  md: 2,
+} as const;
+
+export const TEXT = {
+  primary: COLORS.text,
+  secondary: COLORS.textSoft,
+  muted: COLORS.muted,
+  dim: COLORS.dim,
+} as const;

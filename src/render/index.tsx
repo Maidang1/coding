@@ -48,23 +48,25 @@ function HeaderCard(props: { modelLabel: string; showTip: boolean }): React.JSX.
   const cwd = toDisplayCwd(process.cwd());
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Box borderStyle="single" borderColor={COLORS.border} paddingX={2} paddingY={0} flexDirection="column">
-        <Text color={COLORS.text} bold>
-          &gt;_ Coding Agent <Text color={COLORS.muted}>(v1.0.0)</Text>
+      <Box borderStyle="single" borderColor={COLORS.border} paddingX={2} paddingY={0}>
+        <Text color={COLORS.brand} bold>
+          &gt;_ Coding Agent
         </Text>
-        <Text color={COLORS.muted}>
-          model: <Text color={COLORS.text} bold>{props.modelLabel}</Text>
-          <Text color={COLORS.focus}> /model</Text> to change
-        </Text>
-        <Text color={COLORS.muted}>
-          directory: <Text color={COLORS.text}>{cwd}</Text>
-        </Text>
+        <Text color={COLORS.muted}>  v1.0.0</Text>
+      </Box>
+      <Box marginTop={0}>
+        <Text color={COLORS.muted}>model </Text>
+        <Text color={COLORS.text} bold>{props.modelLabel}</Text>
+        <Text color={COLORS.muted}>  ·  dir </Text>
+        <Text color={COLORS.text}>{cwd}</Text>
+        <Text color={COLORS.muted}>  ·  </Text>
+        <Text color={COLORS.focus}>/help</Text>
       </Box>
 
       {props.showTip && (
-        <Box marginTop={1}>
+        <Box marginTop={0}>
           <Text color={COLORS.muted}>
-            Tip: <Text color={COLORS.text}>/help</Text> for commands • <Text color={COLORS.text}>Ctrl+C</Text> to interrupt
+            Tip: <Text color={COLORS.text}>Shift+Tab</Text> thinking mode • <Text color={COLORS.text}>Ctrl+C</Text> interrupt
           </Text>
         </Box>
       )}
@@ -393,15 +395,25 @@ function App(): React.JSX.Element {
         )}
 
         {/* Input area */}
-        {confirm && (
-          <ConfirmSelectMenu
-            toolName={confirm.toolName}
-            reason={confirm.reason}
-            preview={confirm.preview}
-            options={confirmOptions}
-            selectedIndex={confirmSelectedIndex}
-          />
-        )}
+        <Box flexDirection="column" marginBottom={1}>
+          {confirm ? (
+            <ConfirmSelectMenu
+              toolName={confirm.toolName}
+              reason={confirm.reason}
+              preview={confirm.preview}
+              options={confirmOptions}
+              selectedIndex={confirmSelectedIndex}
+            />
+          ) : (
+            <Box>
+              <Text color={COLORS.dim}>
+                {loading
+                  ? "Waiting for response…"
+                  : "Enter message or slash command"}
+              </Text>
+            </Box>
+          )}
+        </Box>
 
         <Box
           borderStyle="single"

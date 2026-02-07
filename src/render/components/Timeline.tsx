@@ -6,6 +6,8 @@ import { ToolCard } from "./ToolCard";
 import { ConfirmCard } from "./ConfirmCard";
 import { COLORS } from "../theme";
 
+// TODO(ui-layout): Reserved for a future layout-mode switch (single timeline vs split panes).
+// The main render path in this iteration is EventTimeline + TimelineEvent.
 export function Timeline(props: {
   events: UiEvent[];
   mode: "composer" | "activity" | "conversation";

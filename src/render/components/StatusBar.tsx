@@ -12,7 +12,17 @@ export function StatusBar(props: {
   thinking: boolean;
   thinkingModeEnabled: boolean;
 }): React.JSX.Element {
-  const { model, cwd, terminalColumns, pendingConfirms, activeTools, latestTool, thinking, thinkingModeEnabled } = props;
+  const {
+    model,
+    cwd,
+    terminalColumns,
+    pendingConfirms,
+    activeTools,
+    latestTool,
+    thinking,
+    thinkingModeEnabled,
+  } = props;
+
   const isCompact = terminalColumns < 100;
   const isMinimal = terminalColumns < 72;
 
@@ -30,45 +40,39 @@ export function StatusBar(props: {
       marginTop={0}
     >
       <Box>
-        <Text color={COLORS.accent} bold>{model}</Text>
-        {!isCompact && (
-          <Text color={COLORS.dim}> | {cwd}</Text>
-        )}
+        <Text color={COLORS.accent} bold>
+          {model}
+        </Text>
+        {!isCompact && <Text color={COLORS.dim}> | {cwd}</Text>}
       </Box>
 
       <Box>
-        <>
-          <Text color={COLORS.dim}>thinking mode </Text>
-          <Text color={thinkingModeEnabled ? COLORS.success : COLORS.muted} bold>
-            {thinkingModeEnabled ? "on" : "off"}
-          </Text>
-          {!isMinimal && <Text color={COLORS.muted}> (Shift+Tab)</Text>}
-          <Text color={COLORS.muted}> · </Text>
-        </>
+        <Text color={COLORS.dim}>thinking mode </Text>
+        <Text color={thinkingModeEnabled ? COLORS.success : COLORS.muted} bold>
+          {thinkingModeEnabled ? "on" : "off"}
+        </Text>
+        {!isMinimal && <Text color={COLORS.muted}> (Shift+Tab)</Text>}
 
-        {thinking && (
-          <>
-            <Text color={COLORS.pending}>⚡ thinking</Text>
-            <Text color={COLORS.muted}> · </Text>
-          </>
+        <Text color={COLORS.muted}> · </Text>
+        <Text color={thinking ? COLORS.pending : COLORS.dim}>
+          ⚡ {thinking ? "thinking" : "idle"}
+        </Text>
+
+        <Text color={COLORS.muted}> · </Text>
+        <Text color={activeTools > 0 ? COLORS.accent : COLORS.dim}>🔧 {activeTools}</Text>
+        {!isMinimal && activeTools > 0 && latestTool && (
+          <Text color={COLORS.muted}> {latestTool}</Text>
         )}
 
-        {activeTools > 0 && (
-          <>
-            <Text color={COLORS.accent}>🔧 {activeTools}</Text>
-            {!isMinimal && latestTool && <Text color={COLORS.muted}> {latestTool}</Text>}
-            <Text color={COLORS.muted}> · </Text>
-          </>
-        )}
+        <Text color={COLORS.muted}> · </Text>
+        <Text color={pendingConfirms > 0 ? COLORS.warning : COLORS.dim}>
+          ⚠ {pendingConfirms}
+        </Text>
 
-        {pendingConfirms > 0 && (
-          <>
-            <Text color={COLORS.warning}>⚠ {pendingConfirms}</Text>
-            <Text color={COLORS.muted}> · </Text>
-          </>
-        )}
-
-        <Text dimColor color={COLORS.dim}>{isMinimal ? "/help" : "/help for commands"}</Text>
+        <Text color={COLORS.muted}> · </Text>
+        <Text dimColor color={COLORS.dim}>
+          {isMinimal ? "/help" : "/help for commands"}
+        </Text>
       </Box>
     </Box>
   );

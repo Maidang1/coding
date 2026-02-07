@@ -2,28 +2,11 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { ConfirmEvent } from "../state/events";
 import { COLORS } from "../theme";
-
-const GENERIC_COMMAND_CONFIRM_REASON = "Command execution requires confirmation";
-
-function formatConfirmReason(reason: string): string {
-  if (reason === GENERIC_COMMAND_CONFIRM_REASON) {
-    return "Needs approval";
-  }
-  return reason;
-}
-
-function formatConfirmPreview(preview?: string): string | undefined {
-  if (!preview) return undefined;
-  const normalized = preview.trim();
-  if (!normalized) return undefined;
-
-  if (normalized.startsWith("Run command:")) {
-    const command = normalized.slice("Run command:".length).trim().replace(/\s*\n\s*/g, " ");
-    return command ? `cmd: ${command}` : undefined;
-  }
-
-  return normalized.replace(/\s*\n\s*/g, " ");
-}
+import {
+  formatConfirmPreview,
+  formatConfirmReason,
+  shouldShowConfirmReason,
+} from "./formatters/confirm";
 
 type ConfirmStatus = {
   label: "allowed" | "denied" | "pending";
@@ -64,7 +47,7 @@ export function ConfirmCard(props: {
   const status = getConfirmStatus(event);
   const reason = formatConfirmReason(event.reason);
   const preview = formatConfirmPreview(event.preview);
-  const showReason = !(event.reason === GENERIC_COMMAND_CONFIRM_REASON && preview);
+  const showReason = shouldShowConfirmReason(event.reason, event.preview);
   const summary = event.summary ?? `${event.toolName}: ${preview ?? reason}`;
 
   // Background color for visual hierarchy

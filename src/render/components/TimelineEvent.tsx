@@ -2,69 +2,122 @@ import React from "react";
 import { Box, Text } from "ink";
 import { MarkdownText } from "./MarkdownText";
 import { Spinner } from "./Spinner";
-import type { ChatEvent, ConfirmEvent, ErrorEvent, McpEvent, ThinkingEvent, ToolEvent, UiEvent } from "../state/events";
-import { COLORS } from "../theme";
+import {
+  formatConfirmPreview,
+  formatConfirmReason,
+  shouldShowConfirmReason,
+} from "./formatters/confirm";
+import type {
+  ChatEvent,
+  ConfirmEvent,
+  ErrorEvent,
+  McpEvent,
+  ThinkingEvent,
+  ToolEvent,
+  UiEvent,
+} from "../state/events";
+import { COLORS, INDENT, SPACE, TEXT } from "../theme";
 
-const GENERIC_COMMAND_CONFIRM_REASON = "Command execution requires confirmation";
+const TOOL_RESULT_PREVIEW_MAX = 400;
+const TOOL_META_PREVIEW_MAX = 56;
 
-function formatConfirmReason(reason: string): string {
-  if (reason === GENERIC_COMMAND_CONFIRM_REASON) {
-    return "Needs approval";
-  }
-  return reason;
+type EventHeaderProps = {
+  icon: string;
+  iconColor: string;
+  title: string;
+  titleColor?: string;
+  meta?: string;
+  trailing?: React.ReactNode;
+};
+
+function EventHeader({
+  icon,
+  iconColor,
+  title,
+  titleColor = TEXT.primary,
+  meta,
+  trailing,
+}: EventHeaderProps): React.JSX.Element {
+  return (
+    <Box>
+      <Text color={iconColor}>{icon} </Text>
+      <Text color={titleColor} bold>
+        {title}
+      </Text>
+      {meta && <Text color={TEXT.dim}> {meta}</Text>}
+      {trailing ? <Text color={TEXT.dim}> {trailing}</Text> : null}
+    </Box>
+  );
 }
 
-function formatConfirmPreview(preview?: string): string | undefined {
-  if (!preview) return undefined;
-  const normalized = preview.trim();
-  if (!normalized) return undefined;
+function EventBody(props: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <Box flexDirection="column" paddingLeft={INDENT.sm} marginTop={SPACE.xs}>
+      {props.children}
+    </Box>
+  );
+}
 
-  if (normalized.startsWith("Run command:")) {
-    const command = normalized.slice("Run command:".length).trim().replace(/\s*\n\s*/g, " ");
-    return command ? `cmd: ${command}` : undefined;
-  }
+function EventHint(props: { text: string }): React.JSX.Element {
+  return (
+    <Box paddingLeft={INDENT.sm}>
+      <Text color={TEXT.dim}>{props.text}</Text>
+    </Box>
+  );
+}
 
-  return normalized.replace(/\s*\n\s*/g, " ");
+function oneLine(input: string, limit: number): string {
+  const normalized = input.replace(/\s*\n\s*/g, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  return normalized.slice(0, Math.max(1, limit - 1)) + "…";
+}
+
+function durationMeta(event: ToolEvent): string | undefined {
+  if (!event.startedAt || !event.endedAt) return undefined;
+  const sec = Math.max(
+    1,
+    Math.round((Date.parse(event.endedAt) - Date.parse(event.startedAt)) / 1000),
+  );
+  return `(${sec}s)`;
 }
 
 function ChatEventRow(props: { event: ChatEvent }): React.JSX.Element {
   const { event } = props;
 
   if (event.role === "user") {
-    const lines = (event.content ?? "").split("\n");
     return (
-      <Box flexDirection="column" marginBottom={1}>
-        {lines.map((line, i) => (
-          <Box key={i}>
-            <Text color="white" bold>❯ </Text>
-            <Text backgroundColor={COLORS.bgSelected} color="white">
-              {" "}
+      <Box flexDirection="column" marginBottom={SPACE.sm}>
+        <Box>
+          <Text color={COLORS.info}>❯ </Text>
+          {(event.content ?? "").split("\n").map((line, index) => (
+            <Text key={`${event.id}-user-${index}`} color={TEXT.primary}>
               {line || " "}
-              {" "}
             </Text>
-          </Box>
-        ))}
+          ))}
+        </Box>
       </Box>
     );
   }
 
   if (event.role === "system") {
-    const lines = (event.content ?? "").split("\n");
     return (
-      <Box flexDirection="column" marginBottom={1}>
-        {lines.map((line, i) => (
-          <Box key={i}>
-            <Text color="white">{line || " "}</Text>
-          </Box>
-        ))}
+      <Box flexDirection="column" marginBottom={SPACE.sm}>
+        <Box>
+          <Text color={COLORS.warning}>◆ </Text>
+          {(event.content ?? "").split("\n").map((line, index) => (
+            <Text key={`${event.id}-sys-${index}`} color={TEXT.secondary}>
+              {line || " "}
+            </Text>
+          ))}
+        </Box>
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box flexDirection="column" marginBottom={SPACE.sm}>
       <Box>
-        <Text color="white">● </Text>
+        <Text color={COLORS.accent}>● </Text>
         <MarkdownText content={event.content ?? ""} />
       </Box>
     </Box>
@@ -73,54 +126,61 @@ function ChatEventRow(props: { event: ChatEvent }): React.JSX.Element {
 
 function ToolEventRow(props: { event: ToolEvent }): React.JSX.Element {
   const { event } = props;
-  const statusIcon = event.status === "done" ? "✓" : "⟳";
-  const statusColor = event.status === "done" ? COLORS.success : COLORS.pending;
-  const preview = event.preview ?? `Run ${event.toolName}`;
-  const duration =
-    event.startedAt && event.endedAt
-      ? `${Math.max(1, Math.round((Date.parse(event.endedAt) - Date.parse(event.startedAt)) / 1000))}s`
-      : undefined;
-
-  if (!event.expanded) {
-    return (
-      <Box marginBottom={0}>
-        <Text color={statusColor}>{statusIcon} </Text>
-        <Text color={COLORS.accent} bold>{event.toolName}</Text>
-        <Text color={COLORS.muted}> {preview}</Text>
-        {duration && <Text color={COLORS.dim}> ({duration})</Text>}
-        {event.status === "pending" && <Text color={COLORS.pending}> <Spinner /></Text>}
-      </Box>
-    );
-  }
+  const isDone = event.status === "done";
+  const statusIcon = isDone ? "●" : "●";
+  const statusColor = isDone ? COLORS.accent : COLORS.pending;
+  const preview = oneLine(event.preview ?? `Run ${event.toolName}`, TOOL_META_PREVIEW_MAX);
 
   const resultPreview = event.result
-    ? event.result.length > 500
-      ? event.result.slice(0, 500) + "…"
-      : event.result
+    ? oneLine(event.result, TOOL_RESULT_PREVIEW_MAX)
     : undefined;
 
   return (
-    <Box flexDirection="column" marginBottom={1} paddingX={1}>
+    <Box flexDirection="column" marginBottom={SPACE.sm}>
+      {/* Tool header with tree-style prefix */}
       <Box>
         <Text color={statusColor}>{statusIcon} </Text>
         <Text color={COLORS.accent} bold>{event.toolName}</Text>
-        {duration && <Text color={COLORS.dim}> ({duration})</Text>}
+        {isDone && <Text color={TEXT.dim}> {durationMeta(event)}</Text>}
+        {!isDone && (
+          <>
+            <Text color={TEXT.dim}> </Text>
+            <Spinner />
+          </>
+        )}
       </Box>
-      {event.input !== undefined && (
-        <Box paddingLeft={2}>
-          <Text color={COLORS.muted}>{typeof event.input === "string" ? event.input : JSON.stringify(event.input, null, 2)}</Text>
+
+      {/* Tree-style nested content */}
+      {!event.expanded && (
+        <Box paddingLeft={INDENT.sm}>
+          <Text color={TEXT.dim}>└ </Text>
+          <Text color={TEXT.muted}>{preview}</Text>
         </Box>
       )}
-      {resultPreview && (
-        <Box paddingLeft={2} flexDirection="column">
-          <Text color={COLORS.dim}>{resultPreview}</Text>
-        </Box>
-      )}
-      {!!event.filesChanged?.length && (
-        <Box paddingLeft={2} flexDirection="column">
-          {event.filesChanged.map((filePath) => (
-            <Text key={filePath} color={COLORS.success}>  ✎ {filePath}</Text>
-          ))}
+
+      {event.expanded && (
+        <Box flexDirection="column" paddingLeft={INDENT.sm}>
+          {event.input !== undefined && (
+            <Box>
+              <Text color={TEXT.dim}>├ </Text>
+              <Text color={TEXT.muted}>
+                {typeof event.input === "string" ? event.input : JSON.stringify(event.input, null, 2)}
+              </Text>
+            </Box>
+          )}
+          {resultPreview && (
+            <Box>
+              <Text color={TEXT.dim}>├ </Text>
+              <Text color={TEXT.dim}>{resultPreview}</Text>
+            </Box>
+          )}
+          {!!event.filesChanged?.length &&
+            event.filesChanged.map((filePath, idx) => (
+              <Box key={`${event.id}-${filePath}`}>
+                <Text color={TEXT.dim}>{idx === event.filesChanged!.length - 1 ? "└ " : "├ "}</Text>
+                <Text color={COLORS.success}>✎ {filePath}</Text>
+              </Box>
+            ))}
         </Box>
       )}
     </Box>
@@ -129,17 +189,18 @@ function ToolEventRow(props: { event: ToolEvent }): React.JSX.Element {
 
 function ThinkingEventRow(props: { event: ThinkingEvent }): React.JSX.Element {
   const { event } = props;
-  const lines = event.redacted ? ["[thinking is redacted]"] : (event.content ?? "").split("\n");
+  const content = event.redacted ? "[thinking is redacted]" : event.content ?? "";
+
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color={COLORS.dim}>… thinking</Text>
-      </Box>
-      <Box flexDirection="column" paddingLeft={2}>
-        {lines.map((line, i) => (
-          <Text key={i} color={COLORS.dim}>{line || " "}</Text>
+    <Box flexDirection="column" marginBottom={SPACE.sm}>
+      <EventHeader icon="…" iconColor={TEXT.dim} title="thinking" titleColor={TEXT.dim} />
+      <EventBody>
+        {(content || "").split("\n").map((line, index) => (
+          <Text key={`${event.id}-thinking-${index}`} color={TEXT.dim}>
+            {line || " "}
+          </Text>
         ))}
-      </Box>
+      </EventBody>
     </Box>
   );
 }
@@ -147,46 +208,45 @@ function ThinkingEventRow(props: { event: ThinkingEvent }): React.JSX.Element {
 function ConfirmEventRow(props: {
   event: ConfirmEvent;
   isActive: boolean;
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const { event, isActive } = props;
-  const reason = formatConfirmReason(event.reason);
+  if (!event.resolved && isActive) {
+    return null;
+  }
+
   const preview = formatConfirmPreview(event.preview);
-  const showReason = !(event.reason === GENERIC_COMMAND_CONFIRM_REASON && preview);
+  const reason = formatConfirmReason(event.reason);
+  const showReason = shouldShowConfirmReason(event.reason, event.preview);
 
   if (event.resolved) {
-    const icon = event.allowed ? "✓" : "✗";
-    const color = event.allowed ? COLORS.success : COLORS.danger;
-    const label = event.allowed ? "allowed" : "denied";
+    const allowed = !!event.allowed;
     return (
-      <Box marginBottom={0}>
-        <Text color={color}>{icon} </Text>
-        <Text color={COLORS.muted}>{event.toolName} — {label}</Text>
+      <Box flexDirection="column" marginBottom={SPACE.sm}>
+        <EventHeader
+          icon={allowed ? "✓" : "✗"}
+          iconColor={allowed ? COLORS.success : COLORS.danger}
+          title={`Confirm ${allowed ? "allowed" : "denied"}`}
+          titleColor={TEXT.secondary}
+          meta={event.toolName}
+        />
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" marginBottom={1} paddingX={1}>
-      <Box>
-        <Text color={COLORS.warning} bold>⚠ Confirm </Text>
-        <Text color={COLORS.text} bold>{event.toolName}</Text>
-      </Box>
-      {showReason && (
-        <Box paddingLeft={2}>
-          <Text color={COLORS.muted}>{reason}</Text>
-        </Box>
-      )}
-      {preview && (
-        <Box paddingLeft={2}>
-          <Text color={COLORS.dim}>{preview}</Text>
-        </Box>
-      )}
+    <Box flexDirection="column" marginBottom={SPACE.sm}>
+      <EventHeader
+        icon="⚠"
+        iconColor={COLORS.warning}
+        title={`Confirm ${event.toolName}`}
+        titleColor={TEXT.primary}
+      />
+      <EventBody>
+        {showReason && <Text color={TEXT.muted}>{reason}</Text>}
+        {preview && <Text color={TEXT.dim}>{preview}</Text>}
+      </EventBody>
       {isActive && (
-        <Box paddingTop={1}>
-          <Text color={COLORS.warning}>
-            <Text bold color={COLORS.text}>↑/↓</Text> select, <Text bold color={COLORS.text}>Enter</Text> confirm, <Text bold color={COLORS.text}>Esc</Text> deny
-          </Text>
-        </Box>
+        <EventHint text="↑/↓ select • Enter confirm • Esc deny" />
       )}
     </Box>
   );
@@ -194,11 +254,16 @@ function ConfirmEventRow(props: {
 
 function McpEventRow(props: { event: McpEvent }): React.JSX.Element {
   const { event } = props;
-  const color = event.level === "error" ? COLORS.danger : event.level === "warn" ? COLORS.warning : COLORS.dim;
+  const color =
+    event.level === "error"
+      ? COLORS.danger
+      : event.level === "warn"
+        ? COLORS.warning
+        : TEXT.dim;
 
   return (
-    <Box marginBottom={0}>
-      <Text color={color}>🔌 {event.message}</Text>
+    <Box flexDirection="column" marginBottom={SPACE.sm}>
+      <EventHeader icon="🔌" iconColor={color} title={event.message} titleColor={color} />
     </Box>
   );
 }
@@ -207,12 +272,12 @@ function ErrorEventRow(props: { event: ErrorEvent }): React.JSX.Element {
   const { event } = props;
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text color={COLORS.danger}>✗ Error: {event.message}</Text>
+    <Box flexDirection="column" marginBottom={SPACE.sm}>
+      <EventHeader icon="✗" iconColor={COLORS.danger} title="Error" titleColor={COLORS.danger} meta={oneLine(event.message, 100)} />
       {event.expanded && event.stack && (
-        <Box paddingLeft={2}>
+        <EventBody>
           <Text color={COLORS.errorMuted}>{event.stack}</Text>
-        </Box>
+        </EventBody>
       )}
     </Box>
   );
@@ -232,7 +297,12 @@ export function TimelineEvent(props: {
     case "tool":
       return <ToolEventRow event={event} />;
     case "confirm":
-      return <ConfirmEventRow event={event} isActive={event.confirmId === activeConfirmId} />;
+      return (
+        <ConfirmEventRow
+          event={event}
+          isActive={event.confirmId === activeConfirmId}
+        />
+      );
     case "mcp":
       return <McpEventRow event={event} />;
     case "error":

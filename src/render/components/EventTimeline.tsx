@@ -1,17 +1,23 @@
 import React from "react";
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import type { UiEvent } from "../state/events";
 import { TimelineEvent } from "./TimelineEvent";
+import { COLORS } from "../theme";
 
 export function EventTimeline(props: {
   events: UiEvent[];
   hiddenEventCount: number;
   activeConfirmId: string | null;
 }): React.JSX.Element {
-  const { events, activeConfirmId } = props;
+  const { events, hiddenEventCount, activeConfirmId } = props;
 
   return (
     <Box flexDirection="column" marginBottom={1}>
+      {hiddenEventCount > 0 && (
+        <Box marginBottom={1}>
+          <Text color={COLORS.dim}>… {hiddenEventCount} earlier events hidden</Text>
+        </Box>
+      )}
       {events.map((event) => (
         <TimelineEvent
           key={event.id}

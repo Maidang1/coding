@@ -5,6 +5,7 @@ import { COLORS } from "../theme";
 import { ConfirmCard } from "./ConfirmCard";
 import { ToolCard } from "./ToolCard";
 
+// TODO(ui-layout): Reserved for future split-pane mode; currently not wired to the primary app flow.
 type ActivityEvent = ToolEvent | ConfirmEvent | McpEvent | ErrorEvent;
 
 function mcpColor(level: McpEvent["level"]): string {
